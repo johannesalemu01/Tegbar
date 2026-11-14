@@ -118,11 +118,12 @@ describe('bot: callbacks', () => {
     const { john } = await pairBoth(app);
     const rh = await ridehome(app, john);
     for (let i = 0; i < 10; i++) await app.tasks.create(john, { projectId: rh.id, title: `Task ${i} ${'x'.repeat(150)}` });
-    for (const cmd of ['/menu', '/my', '/ours', '/today', '/week', '/overdue', '/projects', '/dashboard', '/settings', '/help', '/project']) {
+    for (const cmd of ['/menu', '/my', '/ours', '/today', '/week', '/overdue', '/projects', '/dashboard', '/settings', '/help', '/project', '/focus', '/remind', '/digest', '/recurring']) {
       await bot.send(JOHN, cmd);
     }
     const t = await app.tasks.create(john, { projectId: rh.id, title: 'x' });
-    for (const a of ['o', 'z', 'e', 'a', 'x', 'h', 'ed', 'ep', 'es', 'ea', 'ej']) await bot.tap(JOHN, `t:${a}:${enc(t.id)}:my.0.m.a.o`);
+    for (const a of ['o', 'z', 'e', 'a', 'x', 'h', 'ed', 'ep', 'es', 'ea', 'ej', 'er']) await bot.tap(JOHN, `t:${a}:${enc(t.id)}:my.0.m.a.o`);
+    for (const d of ['rs:b', 'dg:p', 'dg:r', 'fo:f:60']) await bot.tap(JOHN, d);
     const data = allCallbackData(bot.calls);
     expect(data.length).toBeGreaterThan(50);
     for (const d of data) expect(Buffer.byteLength(d), d).toBeLessThanOrEqual(64);

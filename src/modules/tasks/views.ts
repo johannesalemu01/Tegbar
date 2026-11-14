@@ -8,13 +8,14 @@ import { cb, grid, type Btn } from '../../core/ui/keyboard.js';
 import { G, RULE, STATUS_GLYPH } from '../../core/ui/theme.js';
 import type { View } from '../../core/ui/view.js';
 import type { Due, Issue } from './quickadd.js';
+import { describeRecurrence, isRecurrence, type Recurrence } from './recurrence.js';
 import type { Priority, TaskStatus } from './schema.js';
 import type { DueFilter, OwnerFilter, StatusFilter, TaskFilter, TaskView } from './service.js';
 
 // ---------- list state (encoded into callback_data) ----------
 
-export type ViewKey = 'my' | 'ours' | 'today' | 'week' | 'overdue';
-const VIEW_KEYS: readonly ViewKey[] = ['my', 'ours', 'today', 'week', 'overdue'];
+export type ViewKey = 'my' | 'ours' | 'today' | 'week' | 'overdue' | 'rec';
+const VIEW_KEYS: readonly ViewKey[] = ['my', 'ours', 'today', 'week', 'overdue', 'rec'];
 
 export interface ListState {
   v: ViewKey;
@@ -54,7 +55,7 @@ export function stateToFilter(s: ListState): TaskFilter {
   const owner: OwnerFilter = s.o === 'm' ? 'me' : s.o === 'a' ? 'all' : dec(s.o)!;
   const status: StatusFilter = ({ o: 'open', b: 'blocked', d: 'done', a: 'all' } as const)[s.s];
   const due: DueFilter = s.v === 'today' ? 'today' : s.v === 'week' ? 'week' : s.v === 'overdue' ? 'overdue' : 'any';
-  return { owner, projectId: s.pj === 'a' ? null : dec(s.pj), status, due };
+  return { owner, projectId: s.pj === 'a' ? null : dec(s.pj), status, due, ...(s.v === 'rec' ? { recurring: true } : {}) };
 }
 
 // ---------- shared bits ----------
@@ -73,10 +74,10 @@ export function isOverdue(task: Pick<TaskView, 'status' | 'due_at' | 'due_date'>
   return task.due_at ? task.due_at < toDb(now) : task.due_date < localDate(now);
 }
 
-export function dueLabel(task: Pick<TaskView, 'status' | 'due_at' | 'due_date'>, l: Lookup): string | null {
+export function dueLabel(task: Pick<TaskView, 'status' | 'due_at' | 'due_date'>, l: Lookup, opts: { plain?: boolean } = {}): string | null {
   if (!task.due_date) return null;
   const s = task.due_at ? fmtDateTime(fromDb(task.due_at), l.now, l.fmt) : fmtDay(task.due_date, l.now);
-  return isOverdue(task, l.now) ? `${b(t('task.overdue'))} ${G.dot} ${s}` : s;
+  return !opts.plain && isOverdue(task, l.now) ? `${b(t('task.overdue'))} ${G.dot} ${s}` : s;
 }
 
 function draftDueLabel(due: Due | null, l: Lookup): string | null {
@@ -93,6 +94,16 @@ const statusLabel = (s: TaskStatus) => t(`task.status.${s}`);
 const priorityLabel = (p: Priority) => t(`task.priority.${p}`);
 export const taskRef = (id: number) => `T${id}`;
 
+/** One compact line for digests and reminders. */
+export function taskLine(task: TaskView, l: Lookup, opts: { owner?: boolean; project?: boolean } = {}): string {
+  const meta = [
+    dueLabel(task, l),
+    opts.project === false ? null : code(task.project_code),
+    opts.owner ? (task.owner_name ? esc(task.owner_name) : i(t('task.unassigned'))) : null,
+  ].filter(Boolean);
+  return `${STATUS_GLYPH[task.status] ?? G.todo} ${esc(clip(task.title, 70))}${priorityGlyph(task.priority)}${meta.length ? ` ${G.dot} ${meta.join(` ${G.dot} `)}` : ''}`;
+}
+
 // ---------- list ----------
 
 const VIEW_TITLE: Record<ViewKey, () => string> = {
@@ -101,7 +112,18 @@ const VIEW_TITLE: Record<ViewKey, () => string> = {
   today: () => t('task.view.today'),
   week: () => t('task.view.week'),
   overdue: () => t('task.view.overdue'),
+  rec: () => t('task.view.rec'),
 };
+
+export function recurrenceLabel(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const r: unknown = JSON.parse(raw);
+    return isRecurrence(r) ? describeRecurrence(r) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function listView(state: ListState, items: TaskView[], total: number, pageSize: number, l: Lookup): View {
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -184,6 +206,7 @@ export function cardView(task: TaskView, l: Lookup, st: string, banner?: string)
     `${STATUS_GLYPH[task.status]} ${statusLabel(task.status)}  ${G.dot}  ${task.priority === 'high' ? `${G.high} ` : ''}${priorityLabel(task.priority)}`,
     `${G.owner} ${task.owner_name ? esc(task.owner_name) : i(t('task.unassigned'))}`,
     `${G.due} ${due ?? i(t('task.no_due'))}`,
+    recurrenceLabel(task.recurrence) ? `${G.repeat} ${esc(recurrenceLabel(task.recurrence)!)}` : '',
     task.notes ? `\n${quote(esc(clip(task.notes, 2500)), task.notes.length > 200)}` : '',
     task.deleted_at ? `\n${i(t('task.is_deleted'))}` : '',
   ];
@@ -254,6 +277,7 @@ export function editView(task: TaskView, st: string): View {
         { text: t('task.edit.notes'), data: cb('t', 'en', id, st) },
         { text: t('task.edit.due'), data: cb('t', 'ed', id, st) },
       ],
+      [{ text: t('task.edit.repeat'), data: cb('t', 'er', id, st) }],
       [
         { text: t('task.edit.priority'), data: cb('t', 'ep', id, st) },
         { text: t('task.edit.status'), data: cb('t', 'es', id, st) },
@@ -343,6 +367,8 @@ export function historyView(task: TaskView, events: EventRow[], l: Lookup, st: s
 
 // ---------- quick-add draft ----------
 
+const PRIORITY_CYCLE: readonly Priority[] = ['low', 'normal', 'high'];
+
 export interface DraftPayload {
   title: string;
   projectId: number;
@@ -350,6 +376,7 @@ export interface DraftPayload {
   priority: Priority;
   areaId: number | null;
   due: Due | null;
+  recurrence?: Recurrence | null;
   issues: Issue[];
   fromPlainText: boolean;
 }
@@ -370,12 +397,19 @@ export function issueText(issue: Issue): string {
 export function draftView(draftId: number, d: DraftPayload, l: Lookup): View {
   const id = enc(draftId);
   const project = l.projects.find((p) => p.id === d.projectId);
+  // Cycle buttons carry the value they switch TO, so a double tap is harmless.
+  const pIdx = l.projects.findIndex((p) => p.id === d.projectId);
+  const nextProject = l.projects[(pIdx + 1) % l.projects.length];
+  const owners = [...l.members.map((m) => m.userId), null];
+  const nextOwner = owners[(owners.indexOf(d.ownerUserId) + 1) % owners.length] ?? null;
+  const nextPriority = PRIORITY_CYCLE[(PRIORITY_CYCLE.indexOf(d.priority) + 1) % PRIORITY_CYCLE.length]!;
   const owner = l.members.find((m) => m.userId === d.ownerUserId)?.name ?? t('task.unassigned');
   const due = draftDueLabel(d.due, l);
   const meta = [
     `${G.owner} ${esc(owner)}`,
     `${G.due} ${due ?? t('task.no_due')}`,
     d.priority !== 'normal' ? `${d.priority === 'high' ? G.high : G.low} ${priorityLabel(d.priority)}` : null,
+    d.recurrence ? `${G.repeat} ${esc(describeRecurrence(d.recurrence))}` : null,
   ].filter(Boolean);
   const issues = d.issues.map(issueText);
   const text = [
@@ -396,11 +430,12 @@ export function draftView(draftId: number, d: DraftPayload, l: Lookup): View {
         { text: t('common.cancel'), data: cb('qa', 'c', id) },
       ],
       [
-        { text: `${G.project} ${project?.code ?? '?'} ›`, data: cb('qa', 'p', id) },
-        { text: `${G.owner} ${owner} ›`, data: cb('qa', 'o', id) },
-        { text: `${priorityLabel(d.priority)} ›`, data: cb('qa', 'r', id) },
+        { text: `${G.project} ${project?.code ?? '?'} ›`, data: cb('qa', 'p', id, nextProject ? enc(nextProject.id) : '0') },
+        { text: `${G.owner} ${owner} ›`, data: cb('qa', 'o', id, nextOwner === null ? '0' : enc(nextOwner)) },
+        { text: `${priorityLabel(d.priority)} ›`, data: cb('qa', 'r', id, nextPriority) },
       ],
-      d.due ? [{ text: t('qa.btn_clear_due'), data: cb('qa', 'd', id) }] : [],
+      d.due && !d.recurrence ? [{ text: t('qa.btn_clear_due'), data: cb('qa', 'd', id) }] : [],
+      d.recurrence ? [{ text: t('qa.btn_no_repeat'), data: cb('qa', 'nr', id) }] : [],
     ],
   };
 }

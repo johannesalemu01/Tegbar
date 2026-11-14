@@ -58,10 +58,11 @@ function helpView(reg: Registry): View {
   };
 }
 
-async function settingsView(ctx: MemberCtx): Promise<View> {
+async function settingsView(ctx: MemberCtx, reg: Registry): Promise<View> {
   const { app, actor, member } = ctx;
   const current = await app.projects.current(actor);
   const fmt = await timeFormat(app, actor);
+  const sections = await Promise.all(reg.settings.map((s) => s.render(ctx)));
   return {
     text: [
       b(t('settings.title')),
@@ -70,14 +71,14 @@ async function settingsView(ctx: MemberCtx): Promise<View> {
       t('settings.project', { code: current.code }),
       t('settings.time_format', { fmt }),
       t('settings.zone', { zone: getZone() }),
-      '',
-      i(t('settings.later')),
+      ...sections.map((s) => `\n${s.lines.join('\n')}`),
     ].join('\n'),
     keyboard: [
       [
         { text: t('settings.btn_project'), data: cb('s', 'p') },
-        { text: t('settings.btn_fmt', { next: fmt === '24h' ? '12h' : '24h' }), data: cb('s', 'tf') },
+        { text: t('settings.btn_fmt', { next: fmt === '24h' ? '12h' : '24h' }), data: cb('s', 'tf', fmt === '24h' ? '12h' : '24h') },
       ],
+      ...sections.flatMap((s) => s.buttons),
       [menuBtn],
     ],
   };
@@ -143,7 +144,7 @@ async function projectCard(ctx: MemberCtx, p: Project): Promise<View> {
   if (!p.archived_at) {
     rows.push([
       ...(isCurrent ? [] : [{ text: t('project.btn_current'), data: cb('p', 'c', id), style: 'primary' as const }]),
-      { text: t('project.btn_status', { status }), data: cb('p', 'st', id) },
+      { text: t('project.btn_status', { status }), data: cb('p', 'st', id, PROJECT_STATUSES[(PROJECT_STATUSES.indexOf(p.status) + 1) % PROJECT_STATUSES.length]!) },
     ]);
     rows.push([
       { text: t('project.btn_rename'), data: cb('p', 'e', id, 'name') },
@@ -218,7 +219,7 @@ export const workspaceModule: TegbarModule = {
         await show(ctx, { text: t('project.now_current', { name: p.name, code: p.code }) });
       },
     });
-    reg.command({ name: 'settings', group: 'other', description: 'cmd.settings', handler: async (ctx) => show(ctx, await settingsView(ctx)) });
+    reg.command({ name: 'settings', group: 'other', description: 'cmd.settings', handler: async (ctx) => show(ctx, await settingsView(ctx, reg)) });
 
     reg.menuEntry({ label: 'menu.dashboard', command: 'dashboard', order: 50 });
     reg.menuEntry({ label: 'menu.projects', command: 'projects', order: 60 });
@@ -238,10 +239,11 @@ export const workspaceModule: TegbarModule = {
     reg.callback('s', async (ctx, [action, arg], answer) => {
       const { app, actor } = ctx;
       if (action === 'tf') {
-        const fmt = await timeFormat(app, actor);
-        await app.settings.setAs(actor, S_TIME_FORMAT, actor.userId, fmt === '24h' ? '12h' : '24h');
+        // The button carries the target value, so a double tap is harmless.
+        if (arg !== '12h' && arg !== '24h') return answer(t('common.stale'), true);
+        await app.settings.setAs(actor, S_TIME_FORMAT, actor.userId, arg);
         await answer(t('common.saved'));
-        return show(ctx, await settingsView(ctx));
+        return show(ctx, await settingsView(ctx, reg));
       }
       if (action === 'p') return show(ctx, await switcherView(ctx));
       return answer(t('common.stale'), true);
@@ -268,7 +270,8 @@ export const workspaceModule: TegbarModule = {
           return show(ctx, action === 'sw' ? await switcherView(ctx) : await projectCard(ctx, cur));
         }
         case 'st': {
-          const next = PROJECT_STATUSES[(PROJECT_STATUSES.indexOf(p.status) + 1) % PROJECT_STATUSES.length]!;
+          const next = a2 as ProjectStatus;
+          if (!PROJECT_STATUSES.includes(next)) return answer(t('common.stale'), true);
           return show(ctx, await projectCard(ctx, await app.projects.update(actor, id, { status: next })));
         }
         case 'e': {

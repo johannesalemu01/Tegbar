@@ -12,6 +12,7 @@ export const G = {
   high: '🔸',
   low: '▫️',
   owner: '👤',
+  repeat: '↻',
   due: '🗓',
   project: '◇',
   area: '⌁',
