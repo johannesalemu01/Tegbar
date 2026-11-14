@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { webhookCallback } from 'grammy';
 import { createApp } from './app.js';
+import { buildApiRouter } from './core/api/routes.js';
+import { createApiHandler } from './core/api/server.js';
 import { loadConfig } from './config.js';
 import { openDatabase } from './core/db/database.js';
 import { createBot } from './core/telegram/bot.js';
@@ -34,6 +36,7 @@ async function main(): Promise<void> {
   // Re-plan every reminder/digest job from current data (idempotent), then start
   // the persistent scheduler. The first tick catches up on anything missed while down.
   await app.planner.syncAll(app.workspace.id);
+  await app.meetingPlanner.syncAll(app.workspace.id);
   scheduler.start(30_000);
   log.info('scheduler started (30 s poll)');
 
@@ -43,8 +46,19 @@ async function main(): Promise<void> {
       ? webhookCallback(bot, 'http', { secretToken: config.WEBHOOK_SECRET!, onTimeout: 'return' })
       : null;
 
-  // HTTP: /healthz for Docker and hosts; /telegram in webhook mode.
+  const apiHandler =
+    config.API_ENABLED === 'on'
+      ? createApiHandler(app, buildApiRouter(), {
+          botToken: config.BOT_TOKEN,
+          maxAgeSec: config.API_INITDATA_MAX_AGE,
+          corsOrigin: config.API_CORS_ORIGIN,
+          onError: (err, where) => alerter.critical(err, where),
+        })
+      : null;
+
+  // HTTP: /healthz for Docker and hosts; /telegram in webhook mode; /api/v1 when enabled.
   const server: Server = createServer(async (req, res) => {
+    if (apiHandler && (await apiHandler(req, res))) return;
     if (req.method === 'GET' && req.url === '/healthz') {
       try {
         app.database.raw.prepare('select 1').get();

@@ -21,6 +21,12 @@ import { Availability } from './core/services/availability.js';
 import { reminderMigrations } from './modules/reminders/migrations.js';
 import { ReminderPlanner, ReminderService } from './modules/reminders/service.js';
 import { remindersModule } from './modules/reminders/telegram.js';
+import { coreApi } from './core/api/core-routes.js';
+import { tasksApi } from './modules/tasks/api.js';
+import { meetingsApi } from './modules/meetings/api.js';
+import { meetingMigrations } from './modules/meetings/migrations.js';
+import { MeetingPlanner, MeetingService } from './modules/meetings/service.js';
+import { meetingsModule } from './modules/meetings/telegram.js';
 import { workspaceModule } from './modules/workspace/telegram.js';
 import { taskMigrations } from './modules/tasks/migrations.js';
 import { TaskService } from './modules/tasks/service.js';
@@ -28,10 +34,11 @@ import { tasksModule } from './modules/tasks/telegram.js';
 
 /** Order matters only for menu/help layout. */
 export const MODULES: TegbarModule[] = [
-  { name: 'core', migrations: coreMigrations },
+  { name: 'core', migrations: coreMigrations, api: coreApi },
   workspaceModule,
-  { ...tasksModule, migrations: taskMigrations },
+  { ...tasksModule, migrations: taskMigrations, api: tasksApi },
   { ...remindersModule, migrations: reminderMigrations },
+  { ...meetingsModule, migrations: meetingMigrations, api: meetingsApi },
 ];
 
 export interface AppOptions {
@@ -54,6 +61,8 @@ export interface App {
   availability: Availability;
   reminders: ReminderService;
   planner: ReminderPlanner;
+  meetings: MeetingService;
+  meetingPlanner: MeetingPlanner;
   workspace: Workspace;
   events: EventLog;
   permissions: Permissions;
@@ -89,11 +98,26 @@ export async function createApp(o: AppOptions): Promise<App> {
   const tasks = new TaskService(db, o.clock, permissions, events, projects, members, hooks);
   const planner = new ReminderPlanner(db, o.clock, jobs, settings, tasks, members);
   const reminders = new ReminderService(db, o.clock, permissions, events, jobs, members);
+  const meetings = new MeetingService(db, o.clock, permissions, events, hooks, members, settings, projects, tasks);
+  const meetingPlanner = new MeetingPlanner(db, o.clock, jobs, settings, meetings);
 
   // Domain wiring: keep scheduled jobs in step with the data they depend on.
   hooks.on('task.changed', (e) => planner.syncTask(e.workspaceId, e.taskId));
   hooks.on('member.paired', (e) => planner.syncUser(e.workspaceId, e.userId));
   hooks.on('settings.changed', (e) => (e.scope === 'user' ? planner.onUserSetting(e.workspaceId, e.scopeId, e.key) : undefined));
+  hooks.on('meeting.changed', (e) => meetingPlanner.syncMeeting(e.workspaceId, e.meetingId));
+  hooks.on('member.paired', async (e) => {
+    await meetings.generate(e.workspaceId);
+    await meetingPlanner.syncAll(e.workspaceId); // host rotation and attendees changed
+  });
+  hooks.on('settings.changed', (e) => (e.scope === 'workspace' && e.key.startsWith('meeting_') ? meetingPlanner.syncAll(e.workspaceId) : undefined));
+  hooks.on('task.linked', (e) =>
+    e.link.type === 'meeting' ? meetings.recordLinkedTask({ userId: e.actorUserId, workspaceId: e.workspaceId }, e.link.id, e.taskId) : undefined,
+  );
+
+  await meetings.seed(workspace.id);
+  await meetings.generate(workspace.id);
+
 
   return {
     db,
@@ -105,6 +129,8 @@ export async function createApp(o: AppOptions): Promise<App> {
     availability: new Availability(db, settings),
     reminders,
     planner,
+    meetings,
+    meetingPlanner,
     workspace,
     events,
     permissions,
