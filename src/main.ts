@@ -26,10 +26,16 @@ async function main(): Promise<void> {
   });
 
   let lastUpdateAt = Date.now();
-  const { bot, alerter, syncCommands } = createBot(app, config.BOT_TOKEN, { onUpdate: () => (lastUpdateAt = Date.now()) });
+  const { bot, alerter, syncCommands, scheduler } = createBot(app, config.BOT_TOKEN, { onUpdate: () => (lastUpdateAt = Date.now()) });
   await bot.init();
   log.info({ bot: bot.botInfo.username, mode: config.BOT_MODE }, 'bot ready');
   await syncCommands().catch((err) => log.warn({ err }, 'could not sync commands'));
+
+  // Re-plan every reminder/digest job from current data (idempotent), then start
+  // the persistent scheduler. The first tick catches up on anything missed while down.
+  await app.planner.syncAll(app.workspace.id);
+  scheduler.start(30_000);
+  log.info('scheduler started (30 s poll)');
 
   const webhookPath = '/telegram';
   const handleUpdate =
@@ -84,6 +90,7 @@ async function main(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 10_000);
     force.unref();
     try {
+      await scheduler.stop();
       if (config.BOT_MODE === 'polling') await bot.stop();
       await new Promise<void>((r) => server.close(() => r()));
       await database.close();
