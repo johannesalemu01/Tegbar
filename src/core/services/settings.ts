@@ -3,6 +3,7 @@ import type { SettingScope } from '../db/schema.js';
 import { DomainError, ForbiddenError } from '../errors.js';
 import { toDb, type Clock } from '../time.js';
 import type { Actor } from './context.js';
+import type { Hooks } from '../hooks.js';
 import type { Permissions } from './permissions.js';
 
 /**
@@ -50,6 +51,7 @@ export class Settings {
     private readonly db: Db,
     private readonly clock: Clock,
     private readonly permissions: Permissions,
+    private readonly hooks?: Hooks,
   ) {}
 
   async get<T>(workspaceId: number, def: SettingDef<T>, scopeId: number, exec: DbOrTx = this.db): Promise<T> {
@@ -97,5 +99,6 @@ export class Settings {
       await this.permissions.authorize(actor, 'project.update', { projectId: scopeId });
     }
     await this.setSystem(actor.workspaceId, def, scopeId, value);
+    await this.hooks?.emit('settings.changed', { workspaceId: actor.workspaceId, scope: def.scope, scopeId, key: def.key });
   }
 }

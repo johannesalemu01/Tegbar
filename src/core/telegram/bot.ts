@@ -9,11 +9,15 @@ import type { BotContext, MemberCtx } from './context.js';
 import { installApiGuard } from './guard.js';
 import { sendTo, show } from './render.js';
 import { Registry, type Answer } from './registry.js';
+import { Notifier } from './notifier.js';
+import { Scheduler } from '../scheduler/runner.js';
 
 export interface BotHandle {
   bot: Bot<BotContext>;
   reg: Registry;
   alerter: Alerter;
+  notifier: Notifier;
+  scheduler: Scheduler;
   syncCommands(): Promise<void>;
 }
 
@@ -22,8 +26,13 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
   installApiGuard(bot.api, app.log, (chatId) => app.members.markBlockedByChat(chatId));
   const alerter = new Alerter(() => bot.api, app.members, app.workspace.id, app.log);
 
+  const notifier = new Notifier(app, () => bot.api);
   const reg = new Registry();
-  for (const m of MODULES) m.telegram?.({ app, reg });
+  for (const m of MODULES) m.telegram?.({ app, reg, notifier });
+
+  const scheduler = new Scheduler(app.jobs, app.clock, app.log, (err, where) => alerter.critical(err, where));
+  scheduler.register(notifier.handler());
+  for (const h of reg.jobs) scheduler.register(h);
 
   /** Run a member handler, turning DomainErrors into friendly replies. */
   async function guarded(ctx: MemberCtx, where: string, fn: () => Promise<void>, answer?: Answer): Promise<void> {
@@ -48,6 +57,7 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
   bot.use(async (ctx, next) => {
     opts.onUpdate?.();
     ctx.app = app;
+    ctx.notifier = notifier;
     ctx.actor = null;
     ctx.member = null;
     await next();
@@ -148,7 +158,7 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
     await syncCommandsFor(bot.api, app, reg);
   }
 
-  return { bot, reg, alerter, syncCommands };
+  return { bot, reg, alerter, notifier, scheduler, syncCommands };
 }
 
 /**

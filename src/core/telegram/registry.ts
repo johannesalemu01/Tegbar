@@ -1,6 +1,9 @@
 import type { App } from '../../app.js';
 import type { MessageKey } from '../i18n/index.js';
+import type { JobHandler } from '../scheduler/runner.js';
+import type { Btn } from '../ui/keyboard.js';
 import type { BotContext, MemberCtx } from './context.js';
+import type { Notifier } from './notifier.js';
 
 export type CommandHandler = (ctx: MemberCtx, args: string) => Promise<void>;
 export interface CommandDef {
@@ -27,7 +30,14 @@ export interface DashboardSection {
   render: (ctx: MemberCtx) => Promise<string | null>;
 }
 
+export interface SettingsSection {
+  order: number;
+  render: (ctx: MemberCtx) => Promise<{ lines: string[]; buttons: Btn[][] }>;
+}
+
 export class Registry {
+  readonly jobs: JobHandler[] = [];
+  readonly settings: SettingsSection[] = [];
   readonly commands = new Map<string, CommandDef>();
   readonly callbacks = new Map<string, CallbackHandler>();
   readonly inputs = new Map<string, InputHandler>();
@@ -55,6 +65,13 @@ export class Registry {
     this.menu.push(e);
     this.menu.sort((a, b) => a.order - b.order);
   }
+  job(h: JobHandler): void {
+    this.jobs.push(h);
+  }
+  settingsSection(s: SettingsSection): void {
+    this.settings.push(s);
+    this.settings.sort((a, b) => a.order - b.order);
+  }
   dashboardSection(s: DashboardSection): void {
     this.dashboard.push(s);
     this.dashboard.sort((a, b) => a.order - b.order);
@@ -64,6 +81,7 @@ export class Registry {
 export interface TelegramSetup {
   app: App;
   reg: Registry;
+  notifier: Notifier;
 }
 
 export type { BotContext, MemberCtx };

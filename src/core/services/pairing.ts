@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db/database.js';
 import type { Member } from '../db/schema.js';
 import { toDb, type Clock } from '../time.js';
+import type { Hooks } from '../hooks.js';
 import type { EventLog } from './events.js';
 import type { TelegramProfile } from './members.js';
 import type { Projects } from './projects.js';
@@ -42,6 +43,7 @@ export class Pairing {
     private readonly projects: Projects,
     private readonly events: EventLog,
     private readonly opts: { setupCode: string; seatNames: Partial<Record<string, string>> },
+    private readonly hooks?: Hooks,
   ) {}
 
   async isClosed(workspaceId: number): Promise<boolean> {
@@ -52,7 +54,7 @@ export class Pairing {
     const candidate = text.trim().replace(/^\/start(@\w+)?\s*/i, '');
     if (!candidate || !sameSecret(candidate, this.opts.setupCode)) return { kind: 'ignored' };
 
-    return this.db.transaction().execute(async (trx) => {
+    const result = await this.db.transaction().execute(async (trx): Promise<PairResult> => {
       const existingUser = await trx.selectFrom('users').selectAll().where('telegram_id', '=', profile.id).executeTakeFirst();
       if (existingUser) {
         const m = await trx
@@ -112,5 +114,7 @@ export class Pairing {
       });
       return { kind: 'paired' as const, member, seat, complete };
     });
+    if (result.kind === 'paired') await this.hooks?.emit('member.paired', { workspaceId, userId: result.member.user_id });
+    return result;
   }
 }
