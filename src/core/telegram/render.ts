@@ -26,12 +26,14 @@ export async function show(ctx: BotContext, view: View, mode: 'auto' | 'new' = '
     }
   }
   await ctx.reply(view.text, opts(view));
+  if (view.venue) await ctx.replyWithVenue(view.venue.latitude, view.venue.longitude, view.venue.title, view.venue.address);
 }
 
 /** Send to a chat outside the current update (notifications to the partner). */
 export async function sendTo(api: Api, chatId: number, view: View): Promise<boolean> {
   try {
     await api.sendMessage(chatId, view.text, opts(view));
+    if (view.venue) await api.sendVenue(chatId, view.venue.latitude, view.venue.longitude, view.venue.title, view.venue.address);
     return true;
   } catch (err) {
     if (err instanceof GrammyError && (err.error_code === 403 || err.error_code === 400)) return false;

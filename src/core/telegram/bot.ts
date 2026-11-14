@@ -138,8 +138,23 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
         const h = reg.inputs.get(pending.kind);
         if (h) return h(m, text, pending.payload);
       }
-      for (const h of reg.texts) if (await h(m, text)) return;
+      for (const h of reg.texts) if (await h.handler(m, text)) return;
       await show(m, { text: t('common.text_unhandled') });
+    });
+  });
+
+  bot.on('message:location', async (ctx) => {
+    const m = ctx as MemberCtx;
+    await guarded(m, 'location', async () => {
+      const pending = await app.pending.take<unknown>(m.actor.workspaceId, m.actor.userId);
+      const h = pending ? reg.locations.get(pending.kind) : undefined;
+      if (!h) {
+        if (pending) await app.pending.set(m.actor.workspaceId, m.actor.userId, pending.kind, pending.payload);
+        await ctx.reply(t('common.text_only'), { parse_mode: 'HTML' });
+        return;
+      }
+      const { latitude, longitude } = ctx.message.location;
+      await h(m, { latitude, longitude }, pending!.payload);
     });
   });
 

@@ -19,6 +19,9 @@ export type CallbackHandler = (ctx: MemberCtx, args: string[], answer: Answer) =
 export type InputHandler = (ctx: MemberCtx, text: string, payload: any) => Promise<void>;
 /** Returns true if it handled the message. */
 export type TextHandler = (ctx: MemberCtx, text: string) => Promise<boolean>;
+export type LocationHandler = (ctx: MemberCtx, loc: { latitude: number; longitude: number }, payload: any) => Promise<void>;
+/** Context that a new quick-add draft should be linked to (e.g. the live meeting). */
+export type DraftLinker = (ctx: MemberCtx) => Promise<{ type: string; id: number; label: string } | null>;
 
 export interface MenuEntry {
   label: MessageKey;
@@ -41,7 +44,9 @@ export class Registry {
   readonly commands = new Map<string, CommandDef>();
   readonly callbacks = new Map<string, CallbackHandler>();
   readonly inputs = new Map<string, InputHandler>();
-  readonly texts: TextHandler[] = [];
+  readonly texts: { handler: TextHandler; priority: number }[] = [];
+  readonly locations = new Map<string, LocationHandler>();
+  readonly draftLinkers: DraftLinker[] = [];
   readonly menu: MenuEntry[] = [];
   readonly dashboard: DashboardSection[] = [];
 
@@ -58,8 +63,16 @@ export class Registry {
     if (this.inputs.has(kind)) throw new Error(`Input kind ${kind} registered twice`);
     this.inputs.set(kind, handler);
   }
-  text(handler: TextHandler): void {
-    this.texts.push(handler);
+  /** Lower priority runs first; the tasks module's quick-add fallback uses 100. */
+  text(handler: TextHandler, priority = 50): void {
+    this.texts.push({ handler, priority });
+    this.texts.sort((a, b) => a.priority - b.priority);
+  }
+  location(kind: string, handler: LocationHandler): void {
+    this.locations.set(kind, handler);
+  }
+  draftLinker(fn: DraftLinker): void {
+    this.draftLinkers.push(fn);
   }
   menuEntry(e: MenuEntry): void {
     this.menu.push(e);

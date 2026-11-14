@@ -55,7 +55,7 @@ function parseTaskRef(s: string | undefined): number | null {
 
 // ---------- quick add ----------
 
-async function startQuickAdd(ctx: MemberCtx, text: string, fromPlainText: boolean): Promise<void> {
+async function startQuickAdd(ctx: MemberCtx, text: string, fromPlainText: boolean, link: DraftPayload['link'] = null): Promise<void> {
   const { app, actor } = ctx;
   const r = await app.tasks.parse(actor, text);
   if (!fromPlainText && !isAmbiguous(r)) {
@@ -69,7 +69,7 @@ async function startQuickAdd(ctx: MemberCtx, text: string, fromPlainText: boolea
   }
   const payload: DraftPayload = {
     title: r.title, projectId: r.projectId, ownerUserId: r.ownerUserId, priority: r.priority,
-    areaId: r.areaId, due: r.due, recurrence: r.recurrence, issues: r.issues, fromPlainText,
+    areaId: r.areaId, due: r.due, recurrence: r.recurrence, issues: r.issues, fromPlainText, link,
   };
   const id = await app.drafts.create(actor.workspaceId, actor.userId, DRAFT_KIND, payload);
   await show(ctx, draftView(id, payload, await lookup(ctx)), 'new');
@@ -375,7 +375,8 @@ export const tasksModule: TegbarModule = {
             recurrence: d.recurrence ?? null,
           });
           await answer(t('task.added'));
-          await show(ctx, addedView(task, l));
+          if (d.link) await app.hooks.emit('task.linked', { workspaceId: actor.workspaceId, taskId: task.id, actorUserId: actor.userId, link: { type: d.link.type, id: d.link.id } });
+          await show(ctx, addedView(task, l, d.link?.label));
           await notifyAssignee(ctx, task);
           return;
         }
@@ -451,9 +452,11 @@ export const tasksModule: TegbarModule = {
 
     // Any other plain text becomes a "save as task?" card.
     reg.text(async (ctx, text) => {
-      await startQuickAdd(ctx, text, true);
+      let link: DraftPayload['link'] = null;
+      for (const l of reg.draftLinkers) if ((link = await l(ctx))) break;
+      await startQuickAdd(ctx, text, true, link);
       return true;
-    });
+    }, 100);
 
     // Dashboard section
     reg.dashboardSection({

@@ -26,7 +26,10 @@ export type Action =
   | 'task.update'
   | 'task.delete'
   | 'reminder.create'
-  | 'reminder.view';
+  | 'reminder.view'
+  | 'meeting.view'
+  | 'meeting.manage'
+  | 'meeting.series';
 
 const ALL: readonly Role[] = ['owner', 'member', 'viewer'];
 const EDIT: readonly Role[] = ['owner', 'member'];
@@ -46,6 +49,9 @@ export const MATRIX: Readonly<Record<Action, readonly Role[]>> = {
   'task.delete': EDIT,
   'reminder.create': EDIT,
   'reminder.view': ALL,
+  'meeting.view': ALL,
+  'meeting.manage': EDIT,
+  'meeting.series': OWN,
 };
 
 export interface Target {

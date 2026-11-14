@@ -237,8 +237,8 @@ export function cardView(task: TaskView, l: Lookup, st: string, banner?: string)
   return { text, keyboard: rows };
 }
 
-export function addedView(task: TaskView, l: Lookup): View {
-  const v = cardView(task, l, NO_STATE, `${G.ok} ${t('task.added')}`);
+export function addedView(task: TaskView, l: Lookup, linkLabel?: string): View {
+  const v = cardView(task, l, NO_STATE, `${G.ok} ${linkLabel ? t('task.added_linked', { label: linkLabel }) : t('task.added')}`);
   v.keyboard = [
     [
       { text: t('task.btn_undo_add'), data: cb('t', 'xu', enc(task.id), NO_STATE) },
@@ -379,6 +379,8 @@ export interface DraftPayload {
   recurrence?: Recurrence | null;
   issues: Issue[];
   fromPlainText: boolean;
+  /** Created in the context of e.g. a live meeting (becomes its action item). */
+  link?: { type: string; id: number; label: string } | null;
 }
 
 export function issueText(issue: Issue): string {
@@ -413,7 +415,7 @@ export function draftView(draftId: number, d: DraftPayload, l: Lookup): View {
   ].filter(Boolean);
   const issues = d.issues.map(issueText);
   const text = [
-    `${G.sparkle} ${b(d.fromPlainText ? t('qa.title_plain') : t('qa.title'))}`,
+    `${G.sparkle} ${b(d.link ? t('qa.title_linked', { label: d.link.label }) : d.fromPlainText ? t('qa.title_plain') : t('qa.title'))}`,
     RULE,
     b(esc(d.title || '—')),
     [project ? code(project.code) : '', d.areaId ? esc(l.areas.get(d.areaId) ?? '') : ''].filter(Boolean).join(` ${G.dot} `),
