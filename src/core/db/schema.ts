@@ -27,6 +27,8 @@ export interface DB {
   events: EventsTable;
   drafts: DraftsTable;
   pending_inputs: PendingInputsTable;
+  jobs: JobsTable;
+  job_fires: JobFiresTable;
 }
 
 interface Stamps {
@@ -165,3 +167,34 @@ export type Project = Selectable<ProjectsTable>;
 export type Area = Selectable<AreasTable>;
 export type NewEvent = Insertable<EventsTable>;
 export type ProjectUpdate = Updateable<ProjectsTable>;
+
+export type JobStatus = 'active' | 'done' | 'cancelled';
+
+/** A persistent scheduled job. One row per logical job (e.g. "task 12, 1h before due"). */
+export interface JobsTable extends Stamps {
+  id: Generated<number>;
+  workspace_id: number;
+  /** Stable identity used for upsert/cancel, e.g. "task:12:b60". Unique per workspace. */
+  key: string;
+  kind: string;
+  user_id: number | null;
+  payload: string; // JSON
+  next_fire_at: string | null;
+  status: JobStatus;
+  fire_count: number;
+  last_fired_at: string | null;
+}
+
+export type FireStatus = 'claimed' | 'sent' | 'skipped' | 'stale' | 'failed';
+
+/** Idempotency ledger: (job_id, fire_at) is unique, so each scheduled moment fires at most once. */
+export interface JobFiresTable extends Stamps {
+  id: Generated<number>;
+  workspace_id: number;
+  job_id: number;
+  fire_at: string;
+  status: FireStatus;
+  detail: string | null;
+}
+
+export type Job = Selectable<JobsTable>;

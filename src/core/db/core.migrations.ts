@@ -125,6 +125,38 @@ const init: Migration = {
   },
 };
 
+const jobs: Migration = {
+  async up(db: Kysely<any>) {
+    await withStamps(
+      withWorkspace(withId(db.schema.createTable('jobs')))
+        .addColumn('key', 'text', (c) => c.notNull())
+        .addColumn('kind', 'text', (c) => c.notNull())
+        .addColumn('user_id', 'integer', (c) => c.references('users.id').onDelete('cascade'))
+        .addColumn('payload', 'text', (c) => c.notNull())
+        .addColumn('next_fire_at', 'text')
+        .addColumn('status', 'text', (c) => c.notNull())
+        .addColumn('fire_count', 'integer', (c) => c.notNull().defaultTo(0))
+        .addColumn('last_fired_at', 'text')
+        .addUniqueConstraint('jobs_ws_key', ['workspace_id', 'key']),
+    ).execute();
+    await db.schema.createIndex('jobs_due').on('jobs').columns(['status', 'next_fire_at']).execute();
+
+    await withStamps(
+      withWorkspace(withId(db.schema.createTable('job_fires')))
+        .addColumn('job_id', 'integer', (c) => c.notNull().references('jobs.id').onDelete('cascade'))
+        .addColumn('fire_at', 'text', (c) => c.notNull())
+        .addColumn('status', 'text', (c) => c.notNull())
+        .addColumn('detail', 'text')
+        .addUniqueConstraint('job_fires_once', ['job_id', 'fire_at']),
+    ).execute();
+  },
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable('job_fires').ifExists().execute();
+    await db.schema.dropTable('jobs').ifExists().execute();
+  },
+};
+
 export const coreMigrations: Record<string, Migration> = {
   '202611050001_core_init': init,
+  '202611150001_core_jobs': jobs,
 };
