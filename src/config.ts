@@ -21,6 +21,11 @@ const schema = z
     PERSON_A_NAME: z.string().optional(),
     PERSON_B_NAME: z.string().optional(),
     BUTTON_STYLES: z.enum(['on', 'off']).default('on'),
+    API_ENABLED: z.enum(['on', 'off']).default('off'),
+    /** Origin of your Mini App / dashboard, e.g. https://tegbar.example.com (enables CORS for it only). */
+    API_CORS_ORIGIN: z.string().url().optional(),
+    /** Reject Mini App launch data older than this (seconds). */
+    API_INITDATA_MAX_AGE: z.coerce.number().int().positive().default(86_400),
   })
   .superRefine((v, ctx) => {
     if (v.BOT_MODE === 'webhook') {

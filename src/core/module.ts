@@ -1,4 +1,5 @@
 import type { Migration } from 'kysely/migration';
+import type { ApiRouter } from './api/router.js';
 import type { TelegramSetup } from './telegram/registry.js';
 
 /**
@@ -14,5 +15,7 @@ export interface TegbarModule {
   migrations?: Record<string, Migration>;
   /** Register commands, callbacks, text inputs, menu buttons and dashboard sections. */
   telegram?(setup: TelegramSetup): void;
+  /** Register HTTP API routes (under /api/v1). Handlers call domain services only. */
+  api?(router: ApiRouter): void;
   // Phase 2: jobs?(scheduler) — scheduled job kinds owned by the module.
 }
