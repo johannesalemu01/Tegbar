@@ -24,6 +24,12 @@ export interface TasksTable {
   completed_at: string | null;
   deleted_at: string | null;
   deleted_by: number | null;
+  /** JSON Recurrence (see recurrence.ts) or null. */
+  recurrence: string | null;
+  /** First task of a recurring series. */
+  series_id: number | null;
+  /** Set once the next occurrence has been created, so completing twice never spawns twice. */
+  recur_next_id: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,6 +1,7 @@
 import * as chrono from 'chrono-node';
-import type { DateTime } from 'luxon';
+import { DateTime } from 'luxon';
 import type { Priority } from './schema.js';
+import { firstOnOrAfter, matches, parseRecurrence, withAnchor, type Recurrence } from './recurrence.js';
 
 /**
  * Pure quick-add parser. No database, no Telegram — fully unit-tested.
@@ -56,6 +57,7 @@ export interface QuickAddResult {
   projectId: number;
   areaId: number | null;
   due: Due | null;
+  recurrence: Recurrence | null;
   issues: Issue[];
 }
 
@@ -115,18 +117,44 @@ export function parseQuickAdd(input: string, ctx: QuickAddContext): QuickAddResu
     }
   }
 
-  // 3. Dates.
+  // 3. Recurrence ("every monday", "monthly on the 1st") — removed before date parsing.
+  const recFound = parseRecurrence(rest, ctx.now.weekday);
+  if (recFound) rest = rest.replace(recFound.match, ' ');
+
+  // 4. Dates.
   const dueParse = extractDue(rest, ctx.now);
   rest = dueParse.rest;
   issues.push(...dueParse.issues);
+  let due = dueParse.due;
+  let recurrence: Recurrence | null = null;
+  if (recFound) {
+    const today = ctx.now.toFormat('yyyy-MM-dd');
+    // plain "weekly" repeats on the due date's weekday
+    const dueWeekday = due ? DateTimeFromDate(due.date).weekday : ctx.now.weekday;
+    const rule = parseRecurrence(recFound.match, dueWeekday)!.rule;
+    const start = due?.date ?? today;
+    const probe = withAnchor(rule, start);
+    const first = matches(probe, start) ? start : firstOnOrAfter(probe, start);
+    recurrence = withAnchor(rule, first);
+    due = { date: first, time: due?.time ?? null };
+    // a date that only existed to anchor the rule is not "in the past"
+    if (first >= today) {
+      const i = issues.findIndex((x) => x.kind === 'past_date');
+      if (i >= 0) issues.splice(i, 1);
+    }
+  }
 
-  // 4. Title.
+  // 5. Title.
   let title = `${rest} ${keptTokens.join(' ')}`.replace(/\s+/g, ' ').trim();
   title = title.replace(/^[,;:\-–—\s]+|[,;:\-–—\s]+$/g, '').trim();
   if (!title) issues.push({ kind: 'empty_title' });
   if (title.length > 200) title = `${title.slice(0, 199)}…`;
 
-  return { title, ownerUserId, priority, projectId, areaId, due: dueParse.due, issues };
+  return { title, ownerUserId, priority, projectId, areaId, due, recurrence, issues };
+}
+
+function DateTimeFromDate(date: string) {
+  return DateTime.fromISO(date, { zone: 'utc' });
 }
 
 function resolveOwner(handle: string, ctx: QuickAddContext): number | null {

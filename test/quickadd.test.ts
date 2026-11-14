@@ -126,3 +126,28 @@ describe('title cleanup around dates', () => {
     expect(parseQuickAdd('Launch in december', ctx()).issues).toContainEqual({ kind: 'vague_date', value: 'december' });
   });
 });
+
+describe('quick add recurrence', () => {
+  it('every monday 9am → next Monday 09:00, weekly', () => {
+    const r = parseQuickAdd('Team sync every monday 9am', ctx());
+    expect(r.title).toBe('Team sync');
+    expect(r.due).toEqual({ date: '2026-11-16', time: '09:00' });
+    expect(r.recurrence).toEqual({ freq: 'weekly', interval: 1, weekdays: [1], anchor: '2026-11-16' });
+    expect(r.issues).toEqual([]);
+  });
+  it('monthly on the 1st without a date → first upcoming 1st', () => {
+    const r = parseQuickAdd('Pay hosting monthly on the 1st !high', ctx());
+    expect(r.due).toEqual({ date: '2026-12-01', time: null });
+    expect(r.recurrence).toMatchObject({ freq: 'monthly', day: 1, anchor: '2026-12-01' });
+  });
+  it('daily from today', () => {
+    const r = parseQuickAdd('Check SMS credits daily', ctx());
+    expect(r.due).toEqual({ date: '2026-11-15', time: null });
+    expect(r.recurrence).toMatchObject({ freq: 'daily', interval: 1 });
+  });
+  it('weekly takes the weekday of the given date', () => {
+    const r = parseQuickAdd('Investor update weekly friday 4pm', ctx());
+    expect(r.recurrence).toMatchObject({ freq: 'weekly', weekdays: [5] });
+    expect(r.due).toEqual({ date: '2026-11-20', time: '16:00' });
+  });
+});

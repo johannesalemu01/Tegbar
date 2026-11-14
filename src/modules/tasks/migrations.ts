@@ -30,6 +30,18 @@ const init: Migration = {
   },
 };
 
+const recurrence: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable('tasks').addColumn('recurrence', 'text').execute();
+    await db.schema.alterTable('tasks').addColumn('series_id', 'integer').execute();
+    await db.schema.alterTable('tasks').addColumn('recur_next_id', 'integer').execute();
+  },
+  async down(db: Kysely<any>) {
+    for (const c of ['recur_next_id', 'series_id', 'recurrence']) await db.schema.alterTable('tasks').dropColumn(c).execute();
+  },
+};
+
 export const taskMigrations: Record<string, Migration> = {
   '202611050100_tasks_init': init,
+  '202611150100_tasks_recurrence': recurrence,
 };

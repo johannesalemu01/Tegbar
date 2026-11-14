@@ -1,5 +1,5 @@
 import { sql } from 'kysely';
-import type { Db } from '../../core/db/database.js';
+import type { Db, Tx } from '../../core/db/database.js';
 import { DomainError, NotFoundError } from '../../core/errors.js';
 import type { Actor } from '../../core/services/context.js';
 import type { EventLog, EventRow } from '../../core/services/events.js';
@@ -8,7 +8,9 @@ import type { Permissions } from '../../core/services/permissions.js';
 import type { Projects } from '../../core/services/projects.js';
 import type { DateTime } from 'luxon';
 import { atLocal, fromDb, fromLocalDate, localDate, toDb, type Clock } from '../../core/time.js';
+import type { Hooks } from '../../core/hooks.js';
 import { parseQuickAdd, type Due, type QuickAddContext, type QuickAddResult } from './quickadd.js';
+import { firstOnOrAfter, isRecurrence, nextOccurrence, type Recurrence } from './recurrence.js';
 import { OPEN_STATUSES, PRIORITIES, TASK_STATUSES, type Priority, type TaskRow, type TaskStatus } from './schema.js';
 
 export interface TaskInput {
@@ -19,6 +21,7 @@ export interface TaskInput {
   priority?: Priority;
   areaId?: number | null;
   due?: Due | null;
+  recurrence?: Recurrence | null;
 }
 
 export interface TaskPatch {
@@ -30,6 +33,7 @@ export interface TaskPatch {
   areaId?: number | null;
   projectId?: number;
   due?: Due | null;
+  recurrence?: Recurrence | null;
 }
 
 export type OwnerFilter = 'me' | 'all' | number;
@@ -42,6 +46,10 @@ export interface TaskFilter {
   status: StatusFilter;
   due: DueFilter;
   areaId?: number | null;
+  /** only tasks with a recurrence rule */
+  recurring?: boolean;
+  /** with status 'done': completed at or after this UTC ISO instant */
+  completedSince?: string;
 }
 
 export interface TaskView extends TaskRow {
@@ -70,7 +78,28 @@ export class TaskService {
     private readonly events: EventLog,
     private readonly projects: Projects,
     private readonly members: Members,
+    private readonly hooks: Hooks,
   ) {}
+
+  /** Read without an actor — for scheduled/system code that then checks permissions for the recipient. */
+  async ownerOf(workspaceId: number, id: number): Promise<{ ownerUserId: number | null; projectId: number } | null> {
+    const r = await this.db.selectFrom('tasks').select(['owner_user_id', 'project_id']).where('id', '=', id).where('workspace_id', '=', workspaceId).executeTakeFirst();
+    return r ? { ownerUserId: r.owner_user_id, projectId: r.project_id } : null;
+  }
+
+  /** Open, dated, non-deleted task ids — used to re-plan reminders at start-up. */
+  async openDatedIds(workspaceId: number): Promise<number[]> {
+    const rows = await this.db
+      .selectFrom('tasks').select('id')
+      .where('workspace_id', '=', workspaceId).where('deleted_at', 'is', null)
+      .where('status', '!=', 'done').where('due_date', 'is not', null)
+      .execute();
+    return rows.map((r) => r.id);
+  }
+
+  private async changed(workspaceId: number, ...taskIds: (number | null | undefined)[]): Promise<void> {
+    for (const taskId of taskIds) if (taskId) await this.hooks.emit('task.changed', { workspaceId, taskId });
+  }
 
   // ---------- queries ----------
 
@@ -100,6 +129,8 @@ export class TaskService {
     if (f.owner === 'me') q = q.where('t.owner_user_id', '=', actor.userId);
     else if (typeof f.owner === 'number') q = q.where('t.owner_user_id', '=', f.owner);
     if (f.areaId) q = q.where('t.area_id', '=', f.areaId);
+    if (f.recurring) q = q.where('t.recurrence', 'is not', null);
+    if (f.completedSince) q = q.where('t.completed_at', '>=', f.completedSince);
 
     if (f.status === 'open') q = q.where('t.status', 'in', [...OPEN_STATUSES]);
     else if (f.status === 'blocked') q = q.where('t.status', '=', 'blocked');
@@ -231,7 +262,10 @@ export class TaskService {
     const priority = input.priority ?? 'normal';
     if (!PRIORITIES.includes(priority)) throw new DomainError('task.bad_priority');
     const now = toDb(this.clock.now());
-    const due = this.dueColumns(input.due ?? null);
+    const recurrence = input.recurrence ? this.checkRecurrence(input.recurrence) : null;
+    // A recurring task always has a due date: its first occurrence.
+    const dueIn = input.due ?? (recurrence ? { date: firstOnOrAfter(recurrence, localDate(this.clock.now())), time: null } : null);
+    const due = this.dueColumns(dueIn);
 
     const id = await this.db.transaction().execute(async (trx) => {
       const r = await trx
@@ -240,6 +274,7 @@ export class TaskService {
           workspace_id: actor.workspaceId, project_id: input.projectId, area_id: areaId, title,
           notes: input.notes?.trim() || null, status: 'todo', priority, owner_user_id: ownerUserId,
           created_by: actor.userId, ...due, completed_at: null, deleted_at: null, deleted_by: null,
+          recurrence: recurrence ? JSON.stringify(recurrence) : null, series_id: null, recur_next_id: null,
           created_at: now, updated_at: now,
         })
         .returning('id')
@@ -247,10 +282,11 @@ export class TaskService {
       await this.events.record(trx, {
         workspaceId: actor.workspaceId, projectId: input.projectId, actorUserId: actor.userId,
         entityType: 'task', entityId: r.id, action: 'task.created',
-        data: { title, owner: ownerUserId, priority, due: input.due ?? null, area: areaId },
+        data: { title, owner: ownerUserId, priority, due: dueIn, area: areaId, recurrence },
       });
       return r.id;
     });
+    await this.changed(actor.workspaceId, id);
     return this.get(actor, id);
   }
 
@@ -258,7 +294,7 @@ export class TaskService {
    * Applies a patch and logs every changed field. Idempotent: a patch that
    * changes nothing writes nothing and returns `changed: false`.
    */
-  async update(actor: Actor, id: number, patch: TaskPatch): Promise<{ task: TaskView; changed: boolean }> {
+  async update(actor: Actor, id: number, patch: TaskPatch): Promise<{ task: TaskView; changed: boolean; spawned?: TaskView }> {
     const before = await this.get(actor, id);
     await this.permissions.authorize(actor, 'task.update', { projectId: before.project_id });
 
@@ -324,9 +360,21 @@ export class TaskService {
       }
     }
 
+    if (patch.recurrence !== undefined) {
+      const next = patch.recurrence ? JSON.stringify(this.checkRecurrence(patch.recurrence)) : null;
+      if (next !== before.recurrence) {
+        set.recurrence = next;
+        note('recurrence', before.recurrence ? 'on' : null, next ? 'on' : null);
+        if (next && !before.due_date && patch.due === undefined) {
+          Object.assign(set, this.dueColumns({ date: firstOnOrAfter(patch.recurrence!, localDate(this.clock.now())), time: null }));
+        }
+      }
+    }
+
     if (Object.keys(changes).length === 0) return { task: before, changed: false };
 
-    await this.db.transaction().execute(async (trx) => {
+    const completing = set.status === 'done';
+    const spawnedId = await this.db.transaction().execute(async (trx) => {
       await trx
         .updateTable('tasks')
         .set({ ...set, updated_at: toDb(this.clock.now()) })
@@ -337,8 +385,47 @@ export class TaskService {
         workspaceId: actor.workspaceId, projectId, actorUserId: actor.userId,
         entityType: 'task', entityId: id, action: 'task.updated', data: { changes },
       });
+      return completing ? this.spawnNext(trx, actor, id) : null;
     });
-    return { task: await this.get(actor, id), changed: true };
+    await this.changed(actor.workspaceId, id, spawnedId);
+    return {
+      task: await this.get(actor, id),
+      changed: true,
+      ...(spawnedId ? { spawned: await this.get(actor, spawnedId) } : {}),
+    };
+  }
+
+  /**
+   * When a recurring task is completed, create its next occurrence (once).
+   * The next date follows the rule from the current due date, skipping
+   * occurrences that are already in the past; the time of day is kept.
+   */
+  private async spawnNext(trx: Tx, actor: Actor, id: number): Promise<number | null> {
+    const t = await trx.selectFrom('tasks').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
+    if (!t.recurrence || t.recur_next_id) return null;
+    const rule: unknown = JSON.parse(t.recurrence);
+    if (!isRecurrence(rule)) return null;
+    const today = localDate(this.clock.now());
+    let date = nextOccurrence(rule, t.due_date ?? today);
+    if (date < today) date = firstOnOrAfter(rule, today);
+    const time = t.due_at ? fromDb(t.due_at).toFormat('HH:mm') : null;
+    const now = toDb(this.clock.now());
+    const r = await trx
+      .insertInto('tasks')
+      .values({
+        workspace_id: t.workspace_id, project_id: t.project_id, area_id: t.area_id, title: t.title, notes: t.notes,
+        status: 'todo', priority: t.priority, owner_user_id: t.owner_user_id, created_by: actor.userId,
+        ...this.dueColumns({ date, time }), completed_at: null, deleted_at: null, deleted_by: null,
+        recurrence: t.recurrence, series_id: t.series_id ?? t.id, recur_next_id: null, created_at: now, updated_at: now,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await trx.updateTable('tasks').set({ recur_next_id: r.id }).where('id', '=', id).execute();
+    await this.events.record(trx, {
+      workspaceId: t.workspace_id, projectId: t.project_id, actorUserId: actor.userId,
+      entityType: 'task', entityId: r.id, action: 'task.created', data: { recurredFrom: id, due: { date, time } },
+    });
+    return r.id;
   }
 
   async setStatus(actor: Actor, id: number, status: TaskStatus) {
@@ -382,6 +469,7 @@ export class TaskService {
         entityType: 'task', entityId: id, action: 'task.deleted', data: { title: task.title },
       });
     });
+    await this.changed(actor.workspaceId, id);
     return { task: await this.get(actor, id, { includeDeleted: true }), changed: true };
   }
 
@@ -398,6 +486,7 @@ export class TaskService {
         entityType: 'task', entityId: id, action: 'task.restored',
       });
     });
+    await this.changed(actor.workspaceId, id);
     return { task: await this.get(actor, id), changed: true };
   }
 
@@ -429,6 +518,11 @@ export class TaskService {
       )
       .selectAll('t')
       .select(['p.code as project_code', 'p.name as project_name', 'a.name as area_name', 'wm.display_name as owner_name']);
+  }
+
+  private checkRecurrence(r: Recurrence): Recurrence {
+    if (!isRecurrence(r)) throw new DomainError('task.bad_recurrence');
+    return r;
   }
 
   private cleanTitle(title: string): string {
