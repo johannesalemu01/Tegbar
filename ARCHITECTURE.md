@@ -72,6 +72,31 @@ Modules register job handlers with `reg.job(handler)`.
 Use them to keep derived state, such as scheduled jobs, in step without modules importing each other.
 They are not the audit log; that is `events`.
 
+## HTTP API
+
+`core/api/` holds the transport for a future Mini App or dashboard:
+
+- `initdata.ts` validates Telegram's signed launch data.
+- `router.ts` is a tiny path router.
+- `server.ts` handles auth, member lookup, rate limit, JSON body limits and error mapping:
+  `DomainError` → 400, `ForbiddenError` → 403, `NotFoundError` → 404, zod → 400 with issues, anything else → 500 plus a critical alert.
+
+Modules add routes in `api(router)`. Handlers are thin: parse input with zod, then call a service with `req.actor`. The service authorizes, exactly as for Telegram.
+A new client (Mini App, dashboard, integration) needs no business logic of its own.
+
+## Meetings (Phase 3)
+
+- `meeting_series` holds the weekly slots. `meetings` holds one row per occurrence, keyed by `(series_id, week_start)`, where `week_start` is the Monday of that week.
+  Moving a slot to another weekday therefore keeps each week's meeting, with its agenda and RSVPs.
+- **Overrides, not copies.** A meeting row stores only what was changed for that meeting (mode, length, host, place, link, `moved`). Everything else is resolved from the slot when read.
+  So per-meeting changes never alter the slot, and slot edits never overwrite per-meeting changes. `start_at` is materialised for queries and is re-timed only for meetings that were not moved.
+  Every override is also written to `meeting_exceptions` and to `events`.
+- The host rotation is deterministic: `(weekIndex + slot.ordinal) % members`. With two people and two slots, each person hosts once a week, and they swap weekly.
+- `MeetingService.generate()` is idempotent. It runs at start-up, daily at 03:00 (a scheduler job), and after slot edits or pairing.
+- `MeetingPlanner` keeps the reminder jobs (`mtg:<id>:eve|b60|b10|start|link|wrap`) in step through the `meeting.changed` hook. A moved meeting changes `startKey`, so old jobs become obsolete.
+- Agenda sources are pluggable: `meetings.addAgendaSource(fn)`. Phase 5 will add pending decisions and unacknowledged notices this way.
+- A live meeting registers a *draft linker*, so plain-text tasks become its action items through the `task.linked` hook. The tasks module knows nothing about meetings.
+
 ## Adding a module
 
 1. `src/modules/<name>/schema.ts`: table interfaces plus declaration merging into `DB`:

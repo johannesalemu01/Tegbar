@@ -34,7 +34,26 @@ RideHome is the first project; `General` holds company-wide items.
   - Focus holds back automatic nudges only.
   - Held messages are delivered later, never dropped.
 
-The next phases are meetings (3), shared costs (4), and notices, decisions, notes, search and backups (5).
+**Phase 3, meetings:**
+
+- Two weekly slots are seeded; change them in `/meetings` → ⚙ Slots. **Weekly sync** is Tue 19:00, 60 min, virtual. **Weekly sit-down** is Sat 10:00, 90 min, in person at **The Spot, Kazanchis**.
+- Meetings are generated 8 weeks ahead, and the host alternates every week.
+- Per-meeting changes: move, skip or un-skip, switch virtual/in person, host, place, length, Meet link. You can also add extra one-off meetings. None of these change the weekly slot.
+- Virtual meetings:
+  - Set the link with `/meeting link meet.google.com/abc-defg-hij`. It is validated, and a slot can also have a reusable room link.
+  - The host is reminded to add the link 2 hours before. At the start, both of you are alerted if it is still missing.
+  - Every reminder has a **▶ Join Meet** button.
+- In person: there is a saved places list with a default. Reminders show the address, and a map venue if you have added a pin (📎 → Location).
+- Reminders go out the evening before (20:00), 1 hour before, 10 minutes before and at the start. Each one has RSVP buttons: Going, +10, +20, Can't.
+  "Can't" lets you propose another time, which your partner accepts in one tap.
+- Calendar files: `.ics` for one meeting or all upcoming ones, so meetings appear in Google Calendar with alerts.
+- The agenda is built automatically from blocked and overdue tasks, last meeting's open action items and carried-over questions. You can edit it.
+- While a meeting is live, any task you type becomes an action item. Decisions, open questions and notes can be logged with one tap.
+- Ending a meeting sends both of you a summary and carries open questions to the next meeting. `/meetings` → 🕘 History shows past meetings.
+
+**HTTP API** (off by default) for a future Mini App or dashboard; see section 7.
+
+The next phases are shared costs (4), and notices, decisions, notes, search and backups (5).
 
 ## 1. Create the bot (@BotFather)
 
@@ -143,6 +162,9 @@ To restore: stop the bot, replace `data/tegbar.db` with the backup, delete `tegb
 | Remind yourself or both of you | `/remind me tomorrow 9am call the bank`, `/remind us friday 17:00 send the deck` |
 | Focus / do not disturb | `/focus 2h`, `/focus dnd 1h`, `/focus off` |
 | See today's digest now | `/digest` |
+| Next meeting / agenda | `/meeting`, `/agenda`, `/meetings` |
+| Add the Meet link | `/meeting link meet.google.com/abc-defg-hij` |
+| Calendar file | `/meeting ics`, or 📅 on a meeting card |
 | Switch project | `/project` or `/project #ridehome` |
 | New project | `/projects` → **＋ New project** → `FLEET Fleet Ops — B2B pilot` |
 
@@ -153,7 +175,42 @@ Quick-add syntax:
 - `#ridehome` for the project, `#sales` for an area in that project
 - dates such as `tomorrow 10am`, `friday`, `in 3 hours`, `2026-11-20 15:00`, or the Amharic `ዛሬ`, `ነገ`, `ከነገ ወዲያ`
 
-## 7. Extending
+## 7. HTTP API (for a Mini App or web dashboard)
+
+Set `API_ENABLED=on`. The API is served from the same process at `/api/v1`, on `PORT`. Put HTTPS in front of it before exposing it.
+
+**Authentication.** Every request sends the Mini App launch data:
+
+```
+Authorization: tma <window.Telegram.WebApp.initData>
+```
+
+The server checks it with Telegram's documented algorithm:
+
+1. Compute `secret = HMAC-SHA256(key = "WebAppData", data = BOT_TOKEN)`.
+2. Build the data-check-string from every field except `hash`, sorted and joined with `\n`.
+3. The data is valid if `hex(HMAC-SHA256(secret, data_check_string))` equals `hash` (compared in constant time).
+
+The server also rejects launch data older than `API_INITDATA_MAX_AGE`, and the Telegram user must be an active member. Anyone else gets `401` or `403`.
+There is a simple rate limit of 120 requests per minute per person. A browser origin is only allowed through `API_CORS_ORIGIN`.
+
+**Endpoints** (JSON; times in UTC ISO-8601; `/me` returns the display time zone):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/me`, `/members`, `/projects`, `/projects/:id/areas` | |
+| GET | `/tasks?owner=me\|all\|<id>&project=all\|<id>&status=open\|blocked\|done\|all&due=any\|today\|week\|overdue&page=&pageSize=` | |
+| POST | `/tasks` | `{ "text": "Call MMCY tomorrow 10am @sami" }` (quick add; `422` if ambiguous), or explicit fields |
+| GET/PATCH/DELETE | `/tasks/:id` | PATCH: `title, notes, status, priority, ownerUserId, areaId, projectId, due, recurrence` |
+| POST | `/tasks/:id/restore` · GET `/tasks/:id/history` · GET `/dashboard` | |
+| GET | `/meetings`, `/meetings/history`, `/meetings/:id` (with agenda and outcomes), `/meetings/:id/ics` | |
+| POST | `/meetings/:id/rsvp`, `/meetings/:id/skip`, `/meetings/:id/unskip`, `/meetings/:id/agenda`, `/meetings/:id/outcomes` | |
+| PATCH | `/meetings/:id` | `startAt, mode, hostUserId, placeId, link, durationMin` |
+| GET | `/places` | |
+
+Every route calls the same domain services as the bot. Permissions, events, reminders and hooks behave exactly the same.
+
+## 8. Extending
 
 - **New project**: use the bot. The defaults (areas Product, Engineering, Sales, Operations) are in `src/core/services/projects.ts`.
 - **New module**: see [ARCHITECTURE.md](ARCHITECTURE.md#adding-a-module). In short: schema + migrations + service + telegram registration, then one line in `src/app.ts`.
