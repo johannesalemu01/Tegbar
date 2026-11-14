@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "transcript": "tsx test/_transcript.ts"
+    "transcript": "tsx test/_transcript.ts",
+    "transcript:2": "tsx test/_transcript2.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.2.0",

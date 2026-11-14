@@ -46,6 +46,32 @@ Telegram ──► grammY Bot ──► gate (pairing / membership) ──► Re
 - 429s are retried after `retry_after`; 403s mark the user as blocked (`core/telegram/guard.ts`).
 - Outsiders get no reply at all; command menus are set per member chat, so outsiders don't even see the commands.
 
+## Scheduler (Phase 2)
+
+All time-based work goes through one scheduler (`core/scheduler/runner.ts`). Nothing is held in memory.
+
+- `jobs` has one row per logical job, identified by a stable `key` such as `task:12:b60` (1 hour before), `task:12:od`, `digest:daily:<user>` or `rem:7`.
+  Domain code only calls `jobs.upsert(key, …)` and `jobs.cancel(key)`. **`ReminderPlanner`** is idempotent: after any change it makes the jobs table match the data.
+  It runs on `task.changed`, `settings.changed` and `member.paired` hooks, and once at start-up (`syncAll`).
+- Every 30 s, `tick()` loads the due jobs. For each one, the handler first **plans** (send / skip / hold, and the next fire time) with no side effects.
+  The runner then **claims** the fire in one transaction: it moves the job on (guarded by `next_fire_at = <old value>`) and inserts into `job_fires`, where `(job_id, fire_at)` is unique.
+  Only then does it **execute** the send. Two ticks, a restart or a second process can never send the same moment twice.
+  A crash in the few milliseconds between claim and send drops that one message (at-most-once); the ledger row stays `claimed`.
+- Catch-up: each handler declares `maxLateMs`. Older fires are marked `stale` and the job moves to its next regular time.
+  Handlers also skip obsolete work. If the task is done or re-dated, the `dueKey` no longer matches and the reminder is not sent.
+  Once the overdue nudge is due, the "due now" reminder is dropped so only one message goes out.
+- Delivery classes (`core/services/availability.ts`): `urgent` is always delivered. `direct` (person-to-person) is held by quiet hours and DND. `nudge` (reminders, digests) is also held by Focus.
+  `Notifier.deliver()` sends now or creates a `notify.deliver` job for when the person is available; nudge handlers reschedule themselves the same way.
+- Permissions still apply: a scheduled reminder loads the task **as its owner** through `TaskService.get`, so someone who lost access gets nothing.
+
+Modules register job handlers with `reg.job(handler)`.
+
+## Hooks
+
+`core/hooks.ts` carries in-process events emitted after commit (`task.changed`, `settings.changed`, `member.paired`).
+Use them to keep derived state, such as scheduled jobs, in step without modules importing each other.
+They are not the audit log; that is `events`.
+
 ## Adding a module
 
 1. `src/modules/<name>/schema.ts`: table interfaces plus declaration merging into `DB`:
@@ -54,7 +80,8 @@ Telegram ──► grammY Bot ──► gate (pairing / membership) ──► Re
    ```
 2. `migrations.ts`: `{ 'YYYYMMDDHHmm_<name>_init': { up, down } }`, using `withId`, `withWorkspace`, `withStamps`.
 3. `service.ts`: a class taking `db`, `clock`, `permissions`, `events`. Add any new actions to `Action` and `MATRIX` in `permissions.ts`.
-4. `telegram.ts`: export a `TegbarModule` whose `telegram({ app, reg })` registers commands, callbacks (unique prefix), inputs, menu entries and dashboard sections.
+4. `telegram.ts`: export a `TegbarModule` whose `telegram({ app, reg, notifier })` registers commands, callbacks (unique prefix), inputs, menu entries, dashboard and settings sections, and job handlers.
+   Buttons that change state must carry the **target value** (e.g. `s:tf:12h`, not "toggle"), so a double tap is harmless.
 5. In `src/app.ts`, construct the service on `App` and add the module to `MODULES`.
 6. Strings go in `en.ts`; tests go in `test/`.
 
@@ -67,4 +94,5 @@ Kysely already supports PostgreSQL. To move: change `withId` to an identity colu
 ## Phase status
 
 Phase 1: core, pairing, projects, permissions, settings, tasks, events, Docker.
-Next: the persistent scheduler (`jobs` table, 30 s poll, idempotency key per fire) in Phase 2.
+Phase 2: scheduler, task reminders, overdue nudges, one-off reminders, digests, quiet hours / focus / DND, recurring tasks.
+Next: meetings (Phase 3).

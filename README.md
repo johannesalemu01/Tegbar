@@ -22,7 +22,19 @@ RideHome is the first project; `General` holds company-wide items.
 - `/dashboard` across projects and people, `/settings` (current project, 24h/12h), `/menu`, `/help`.
 - An append-only event log, feature flags, typed settings, Docker, a health check, structured logs, graceful shutdown, and critical-error alerts to co-founder A.
 
-The next phases are reminders and digests (2), meetings (3), shared costs (4), and notices, decisions, notes, search and backups (5).
+**Phase 2, reminders and rhythm:**
+
+- Task reminders. By default you get one 1 day before and one 1 hour before; change these in `/settings`. You also always get one at the due time. Date-only tasks remind you at 09:00 on the day.
+- Overdue nudges, capped at 3, once a day.
+- Recurring tasks: `every monday 9am`, `weekdays`, `every 2 weeks on fri`, `monthly on the 1st`, `every 3 days`. The next copy is created when you mark the current one done.
+- One-off reminders: `/remind me|us|@sami <when> <text>`, with Snooze and Cancel.
+- Digests, each with its own time per person: the daily digest (08:00), Week ahead (Mon 08:30) and Week in review (Fri 17:00).
+- Quiet hours (22:00–07:00 by default), **Focus** (`/focus 2h`) and **Do not disturb** (`/focus dnd 1h`):
+  - Quiet hours and Do not disturb hold back automatic nudges and messages from your partner.
+  - Focus holds back automatic nudges only.
+  - Held messages are delivered later, never dropped.
+
+The next phases are meetings (3), shared costs (4), and notices, decisions, notes, search and backups (5).
 
 ## 1. Create the bot (@BotFather)
 
@@ -74,6 +86,8 @@ To add a third person later you will use an owner-approved invite. That arrives 
 
 Tegbar needs **one always-on process and a persistent disk** for SQLite.
 Long polling needs **no public URL or open port**, which makes free VMs easy.
+The reminder scheduler runs inside the same process and polls the database every 30 seconds. A host that sleeps or restarts on a schedule will send reminders late.
+After downtime, Tegbar catches up within a sensible window and skips anything too old: a digest more than 2 hours late is skipped, and a missed "1 hour before" is dropped once the task is due.
 
 **Good fits** [VERIFY the current free-tier terms before signing up]:
 
@@ -125,6 +139,10 @@ To restore: stop the bot, replace `data/tegbar.db` with the backup, delete `tegb
 | Due today / this week / overdue | `/today`, `/week`, `/overdue` |
 | Open, reassign or re-date a task | `/task T12`, `/assign T12 @sami`, `/due T12 friday 5pm` |
 | Restore the last deletion | `/undo` |
+| Recurring task | `/add Pay hosting monthly on the 1st !high`, then `/recurring` |
+| Remind yourself or both of you | `/remind me tomorrow 9am call the bank`, `/remind us friday 17:00 send the deck` |
+| Focus / do not disturb | `/focus 2h`, `/focus dnd 1h`, `/focus off` |
+| See today's digest now | `/digest` |
 | Switch project | `/project` or `/project #ridehome` |
 | New project | `/projects` → **＋ New project** → `FLEET Fleet Ops — B2B pilot` |
 
