@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import type { DateTime } from 'luxon';
@@ -476,6 +476,40 @@ export class CostService {
     return join(this.opts.receiptsDir, rel);
   }
 
+  /** /purge: voided costs and their receipt files (money → second key). */
+  purger() {
+    return {
+      type: 'costs', label: 'voided costs (with receipts)', twoKey: true,
+      candidates: async (actor: Actor) => {
+        const visible = await this.permissions.visibleProjectIds(actor);
+        if (!visible.length) return [];
+        return (await this.db.selectFrom('costs').select(['id', 'amount_minor', 'currency', 'note']).where('workspace_id', '=', actor.workspaceId)
+          .where('project_id', 'in', visible).where('status', '=', 'voided').execute())
+          .map((c) => ({ id: c.id, label: `C${c.id} ${formatMoney(c.amount_minor, c.currency)}${c.note ? ` ${c.note.slice(0, 30)}` : ''}` }));
+      },
+      purge: async (actor: Actor, ids: number[]) => {
+        const voided = (await this.db.selectFrom('costs').select('id').where('workspace_id', '=', actor.workspaceId).where('id', 'in', ids).where('status', '=', 'voided').execute()).map((r) => r.id);
+        if (!voided.length) return { rows: 0, files: 0 };
+        const receipts = await this.db.selectFrom('receipts').select(['path']).where('cost_id', 'in', voided).execute();
+        const rows = await this.db.transaction().execute(async (trx) => {
+          await trx.deleteFrom('receipts').where('cost_id', 'in', voided).execute();
+          await trx.deleteFrom('cost_splits').where('cost_id', 'in', voided).execute();
+          const r = await trx.deleteFrom('costs').where('id', 'in', voided).executeTakeFirst();
+          await this.events.redact(trx, actor.workspaceId, 'cost', voided);
+          await this.events.record(trx, { workspaceId: actor.workspaceId, actorUserId: actor.userId, entityType: 'purge', action: 'purge.costs', data: { count: Number(r.numDeletedRows), receipts: receipts.length } });
+          return Number(r.numDeletedRows);
+        });
+        let files = 0;
+        for (const r of receipts) {
+          if (!r.path) continue;
+          await rm(this.receiptPath(r.path), { force: true });
+          files++;
+        }
+        return { rows, files };
+      },
+    };
+  }
+
   // ---------- ledger ----------
 
   private async ledgerRows(workspaceId: number, projectIds: number[], upTo?: string, onlyProject: number | null = null) {
@@ -564,6 +598,13 @@ export class CostService {
     if (s.from_user_id !== actor.userId) throw new ForbiddenError();
     const r = await this.db.updateTable('settlements').set({ status: 'cancelled', updated_at: toDb(this.clock.now()) }).where('id', '=', id).where('status', '=', 'pending').executeTakeFirst();
     return { changed: Number(r.numUpdatedRows) === 1 };
+  }
+
+  async settlementsFor(actor: Actor): Promise<SettlementRow[]> {
+    await this.permissions.authorize(actor, 'cost.view');
+    const visible = await this.permissions.visibleProjectIds(actor);
+    return (await this.db.selectFrom('settlements').selectAll().where('workspace_id', '=', actor.workspaceId).orderBy('id').execute())
+      .filter((s) => s.project_id === null || visible.includes(s.project_id));
   }
 
   async pendingSettlements(actor: Actor): Promise<SettlementRow[]> {

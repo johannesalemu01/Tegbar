@@ -582,6 +582,8 @@ export class MeetingService {
       workspaceId: actor.workspaceId, projectId: m.projectId, actorUserId: actor.userId, entityType: 'meeting', entityId: meetingId,
       action: `meeting.outcome.${kind}`, data: { outcomeId: row.id, taskId },
     });
+    const attendees = (await this.attendees(actor.workspaceId, m.projectId)).map((a) => a.userId);
+    await this.hooks.emit('meeting.outcome', { workspaceId: actor.workspaceId, meetingId, projectId: m.projectId, kind, text: clean, actorUserId: actor.userId, attendees });
     return row;
   }
 
@@ -740,6 +742,26 @@ export class MeetingService {
       await trx.updateTable('places').set({ is_default: 0, updated_at: now }).where('workspace_id', '=', actor.workspaceId).execute();
       await trx.updateTable('places').set({ is_default: 1, updated_at: now }).where('id', '=', id).execute();
     });
+  }
+
+  async search(actor: Actor, pattern: string, limit: number) {
+    const visible = await this.permissions.visibleProjectIds(actor);
+    if (!visible.length) return [];
+    const byOutcome = await this.db.selectFrom('meeting_outcomes as o').innerJoin('meetings as m', 'm.id', 'o.meeting_id')
+      .select(['m.id', 'o.text', 'o.kind', 'm.start_at'])
+      .where('m.workspace_id', '=', actor.workspaceId).where('m.project_id', 'in', visible)
+      .where((eb) => eb(eb.fn('lower', ['o.text']), 'like', pattern)).orderBy('m.start_at', 'desc').limit(limit).execute();
+    const byTitle = await this.db.selectFrom('meetings as m').leftJoin('meeting_series as s', 's.id', 'm.series_id')
+      .select(['m.id', 'm.start_at', 'm.title', 's.title as series_title'])
+      .where('m.workspace_id', '=', actor.workspaceId).where('m.project_id', 'in', visible).where('m.status', '!=', 'cancelled')
+      .where((eb) => eb.or([eb(eb.fn('lower', ['m.title']), 'like', pattern), eb(eb.fn('lower', ['s.title']), 'like', pattern)]))
+      .where('m.start_at', '<=', toDb(this.clock.now().plus({ weeks: 2 })))
+      .orderBy('m.start_at', 'desc').limit(limit).execute();
+    const hits = [
+      ...byOutcome.map((r) => ({ type: 'meeting', id: r.id, title: r.text, snippet: r.kind, date: r.start_at, projectCode: null })),
+      ...byTitle.map((r) => ({ type: 'meeting', id: r.id, title: r.title ?? r.series_title ?? 'Meeting', snippet: null, date: r.start_at, projectCode: null })),
+    ];
+    return hits.slice(0, limit);
   }
 
   /** Called on 'task.linked': record an action item created during a meeting. */

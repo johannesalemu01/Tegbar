@@ -17,7 +17,8 @@
     "transcript": "tsx test/_transcript.ts",
     "transcript:2": "tsx test/_transcript2.ts",
     "transcript:3": "tsx test/_transcript3.ts",
-    "transcript:4": "tsx test/_transcript4.ts"
+    "transcript:4": "tsx test/_transcript4.ts",
+    "transcript:5": "tsx test/_transcript5.ts"
   },
   "dependencies": {
     "@fontsource/noto-sans-ethiopic": "^5.3.0",

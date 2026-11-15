@@ -218,6 +218,41 @@ export class TaskService {
     return out;
   }
 
+  // ---------- search & purge ----------
+
+  async search(actor: Actor, pattern: string, limit: number) {
+    const visible = await this.permissions.visibleProjectIds(actor);
+    if (!visible.length) return [];
+    const rows = await this.db.selectFrom('tasks as t').innerJoin('projects as p', 'p.id', 't.project_id')
+      .select(['t.id', 't.title', 't.status', 't.due_date', 't.notes', 'p.code'])
+      .where('t.workspace_id', '=', actor.workspaceId).where('t.project_id', 'in', visible).where('t.deleted_at', 'is', null)
+      .where((eb) => eb.or([eb(eb.fn('lower', ['t.title']), 'like', pattern), eb(eb.fn('lower', ['t.notes']), 'like', pattern)]))
+      .orderBy(sql`case when t.status = 'done' then 1 else 0 end`).orderBy('t.id', 'desc').limit(limit).execute();
+    return rows.map((r) => ({ type: 'task', id: r.id, title: r.title, snippet: r.status, date: r.due_date, projectCode: r.code }));
+  }
+
+  purger() {
+    return {
+      type: 'tasks', label: 'deleted tasks', twoKey: false,
+      candidates: async (actor: Actor) => {
+        const visible = await this.permissions.visibleProjectIds(actor);
+        if (!visible.length) return [];
+        return (await this.db.selectFrom('tasks').select(['id', 'title']).where('workspace_id', '=', actor.workspaceId)
+          .where('project_id', 'in', visible).where('deleted_at', 'is not', null).execute()).map((x) => ({ id: x.id, label: x.title }));
+      },
+      purge: async (actor: Actor, ids: number[]) => {
+        const r = await this.db.transaction().execute(async (trx) => {
+          const res = await trx.deleteFrom('tasks').where('workspace_id', '=', actor.workspaceId).where('id', 'in', ids).where('deleted_at', 'is not', null).executeTakeFirst();
+          await this.events.redact(trx, actor.workspaceId, 'task', ids);
+          await this.events.record(trx, { workspaceId: actor.workspaceId, actorUserId: actor.userId, entityType: 'purge', action: 'purge.tasks', data: { count: Number(res.numDeletedRows) } });
+          return Number(res.numDeletedRows);
+        });
+        for (const id of ids) await this.changed(actor.workspaceId, id); // cancels any leftover reminder jobs
+        return { rows: r, files: 0 };
+      },
+    };
+  }
+
   // ---------- quick add ----------
 
   async quickAddContext(actor: Actor, defaultProjectId?: number): Promise<QuickAddContext> {
