@@ -156,7 +156,42 @@ const jobs: Migration = {
   },
 };
 
+const approvals: Migration = {
+  async up(db: Kysely<any>) {
+    await withStamps(
+      withWorkspace(withId(db.schema.createTable('approvals')))
+        .addColumn('project_id', 'integer', (c) => c.references('projects.id').onDelete('cascade'))
+        .addColumn('kind', 'text', (c) => c.notNull())
+        .addColumn('payload', 'text', (c) => c.notNull())
+        .addColumn('summary', 'text', (c) => c.notNull())
+        .addColumn('requested_by', 'integer', (c) => c.notNull().references('users.id'))
+        .addColumn('status', 'text', (c) => c.notNull())
+        .addColumn('decided_by', 'integer')
+        .addColumn('decided_at', 'text')
+        .addColumn('result', 'text')
+        .addColumn('expires_at', 'text', (c) => c.notNull()),
+    ).execute();
+    await db.schema.createIndex('approvals_pending').on('approvals').columns(['workspace_id', 'status']).execute();
+    await withStamps(
+      withWorkspace(withId(db.schema.createTable('invites')))
+        .addColumn('code_hash', 'text', (c) => c.notNull().unique())
+        .addColumn('role', 'text', (c) => c.notNull())
+        .addColumn('display_name', 'text', (c) => c.notNull())
+        .addColumn('created_by', 'integer', (c) => c.notNull().references('users.id'))
+        .addColumn('approval_id', 'integer', (c) => c.references('approvals.id'))
+        .addColumn('expires_at', 'text', (c) => c.notNull())
+        .addColumn('used_by', 'integer')
+        .addColumn('used_at', 'text'),
+    ).execute();
+  },
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable('invites').ifExists().execute();
+    await db.schema.dropTable('approvals').ifExists().execute();
+  },
+};
+
 export const coreMigrations: Record<string, Migration> = {
+  '202611150002_core_approvals': approvals,
   '202611050001_core_init': init,
   '202611150001_core_jobs': jobs,
 };

@@ -11,7 +11,7 @@ export interface CommandDef {
   description: MessageKey;
   handler: CommandHandler;
   /** Shown in /help under this group. */
-  group: 'start' | 'tasks' | 'projects' | 'other';
+  group: 'start' | 'tasks' | 'projects' | 'costs' | 'other';
 }
 
 export type Answer = (text?: string, alert?: boolean) => Promise<void>;
@@ -19,6 +19,17 @@ export type CallbackHandler = (ctx: MemberCtx, args: string[], answer: Answer) =
 export type InputHandler = (ctx: MemberCtx, text: string, payload: any) => Promise<void>;
 /** Returns true if it handled the message. */
 export type TextHandler = (ctx: MemberCtx, text: string) => Promise<boolean>;
+export interface IncomingFile {
+  kind: 'photo' | 'document';
+  fileId: string;
+  uniqueId: string;
+  size: number | null;
+  mime: string | null;
+  ext: string;
+}
+export type MediaHandler = (ctx: MemberCtx, file: IncomingFile, payload: any) => Promise<void>;
+/** Returns true if it handled a photo/document that arrived without a pending question. */
+export type MediaFallback = (ctx: MemberCtx, file: IncomingFile, caption: string) => Promise<boolean>;
 export type LocationHandler = (ctx: MemberCtx, loc: { latitude: number; longitude: number }, payload: any) => Promise<void>;
 /** Context that a new quick-add draft should be linked to (e.g. the live meeting). */
 export type DraftLinker = (ctx: MemberCtx) => Promise<{ type: string; id: number; label: string } | null>;
@@ -46,6 +57,8 @@ export class Registry {
   readonly inputs = new Map<string, InputHandler>();
   readonly texts: { handler: TextHandler; priority: number }[] = [];
   readonly locations = new Map<string, LocationHandler>();
+  readonly media = new Map<string, MediaHandler>();
+  readonly mediaFallbacks: MediaFallback[] = [];
   readonly draftLinkers: DraftLinker[] = [];
   readonly menu: MenuEntry[] = [];
   readonly dashboard: DashboardSection[] = [];
@@ -67,6 +80,12 @@ export class Registry {
   text(handler: TextHandler, priority = 50): void {
     this.texts.push({ handler, priority });
     this.texts.sort((a, b) => a.priority - b.priority);
+  }
+  mediaInput(kind: string, handler: MediaHandler): void {
+    this.media.set(kind, handler);
+  }
+  mediaFallback(fn: MediaFallback): void {
+    this.mediaFallbacks.push(fn);
   }
   location(kind: string, handler: LocationHandler): void {
     this.locations.set(kind, handler);

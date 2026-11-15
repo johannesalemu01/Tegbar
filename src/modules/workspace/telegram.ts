@@ -15,6 +15,11 @@ import { b, code, esc, i, quote } from '../../core/ui/html.js';
 import { cb, grid, type Btn } from '../../core/ui/keyboard.js';
 import { G, RULE } from '../../core/ui/theme.js';
 import type { View } from '../../core/ui/view.js';
+import type { Approval } from '../../core/db/schema.js';
+import { APPROVAL_NOTIFY, type ApprovalNotifyPayload } from '../../core/services/approvals.js';
+import { fmtDateTime, fromDb } from '../../core/time.js';
+import type { App as AppT } from '../../app.js';
+import type { Notifier } from '../../core/telegram/notifier.js';
 
 const STATUS_LABEL: Record<ProjectStatus, () => string> = {
   idea: () => t('project.status.idea'),
@@ -40,7 +45,7 @@ async function menuView(ctx: MemberCtx, reg: Registry): Promise<View> {
 function helpView(reg: Registry): View {
   const groups: Record<string, string[]> = {};
   for (const c of reg.commands.values()) (groups[c.group] ??= []).push(`/${c.name} — ${t(c.description)}`);
-  const section = (key: 'start' | 'tasks' | 'projects' | 'other', title: string) =>
+  const section = (key: 'start' | 'tasks' | 'projects' | 'costs' | 'other', title: string) =>
     groups[key]?.length ? `${b(title)}\n${groups[key].join('\n')}` : '';
   return {
     text: [
@@ -48,8 +53,10 @@ function helpView(reg: Registry): View {
       section('start', t('help.group.start')),
       section('tasks', t('help.group.tasks')),
       section('projects', t('help.group.projects')),
+      section('costs', t('help.group.costs')),
       section('other', t('help.group.other')),
       t('help.quickadd'),
+      t('help.money'),
       t('help.security'),
     ]
       .filter(Boolean)
@@ -193,11 +200,102 @@ async function dashboardView(ctx: MemberCtx, reg: Registry): Promise<View> {
   };
 }
 
+// ---------- approvals (two-key) ----------
+
+function approvalCard(a: Approval, requester: string, now: import('luxon').DateTime, forUserId: number): View {
+  const id = enc(a.id);
+  const pending = a.status === 'pending';
+  const status = pending ? i(t('ap.expires', { when: fmtDateTime(fromDb(a.expires_at), now) })) : b(t(`ap.status.${a.status}`));
+  const rows: Btn[][] = [];
+  if (pending && a.requested_by !== forUserId) {
+    rows.push([{ text: t('ap.btn_approve'), data: cb('ap', 'a', id), style: 'success' }, { text: t('ap.btn_reject'), data: cb('ap', 'r', id), style: 'danger' }]);
+  } else if (pending) rows.push([{ text: t('ap.btn_cancel'), data: cb('ap', 'x', id) }]);
+  return { text: `🔑 ${b(t('ap.title'))}
+${t('ap.asks', { name: requester })}
+${quote(esc(a.summary))}
+${status}`, keyboard: rows };
+}
+
+async function approvalsView(ctx: MemberCtx): Promise<View> {
+  const list = await ctx.app.approvals.pending(ctx.actor);
+  const names = await memberNames(ctx.app, ctx.actor.workspaceId);
+  const lines = list.map((a, idx) => `${b(String(idx + 1))}  ${esc(a.summary)}
+      ${i(t('ap.by', { name: names.get(a.requested_by) ?? '?' }))}`);
+  return {
+    text: `🔑 ${b(t('ap.list_title'))}
+${RULE}
+${lines.join('\n') || i(t('ap.none'))}`,
+    keyboard: [...grid(list.map((a, idx) => ({ text: String(idx + 1), data: cb('ap', 'o', enc(a.id)) })), 6), [menuBtn]],
+  };
+}
+
+function approvalNotifyHandler(app: AppT, notifier: Notifier) {
+  return {
+    kind: APPROVAL_NOTIFY,
+    maxLateMs: 7 * 24 * 3_600_000,
+    nextAfter: () => null,
+    plan: async () => ({ action: 'send' as const, next: null }),
+    execute: async (job: { workspace_id: number }, p: ApprovalNotifyPayload): Promise<'sent' | 'failed'> => {
+      const a = await app.approvals.byId(job.workspace_id, p.approvalId);
+      if (!a) return 'failed';
+      const names = await memberNames(app, a.workspace_id);
+      const now = app.clock.now();
+      if (p.event === 'requested') {
+        if (a.status !== 'pending') return 'sent';
+        for (const who of await app.approvals.approvers(a)) {
+          await notifier.deliver(a.workspace_id, who.userId, approvalCard(a, names.get(a.requested_by) ?? '?', now, who.userId), 'direct');
+        }
+        return 'sent';
+      }
+      const decider = names.get(a.decided_by ?? 0) ?? '?';
+      const text = a.status === 'failed'
+        ? t('ap.failed_note', { summary: a.summary, reason: a.result ?? '' })
+        : t(a.status === 'approved' ? 'ap.approved_by' : 'ap.rejected_by', { name: decider, summary: a.summary });
+      await notifier.deliver(a.workspace_id, a.requested_by, { text }, 'direct');
+      return 'sent';
+    },
+  };
+}
+
 // ---------- module ----------
 
 export const workspaceModule: TegbarModule = {
   name: 'workspace',
-  telegram({ reg }) {
+  telegram({ app, reg, notifier }) {
+    reg.job(approvalNotifyHandler(app, notifier));
+    reg.command({ name: 'approvals', group: 'other', description: 'cmd.approvals', handler: async (ctx) => show(ctx, await approvalsView(ctx)) });
+    reg.command({
+      name: 'invite', group: 'other', description: 'cmd.invite',
+      handler: async (ctx, args) => {
+        const m = /^\s*(.+?)(?:\s+(member|viewer))?\s*$/i.exec(args);
+        if (!m || !m[1]) throw new DomainError('ap.invite_usage');
+        const role = (m[2]?.toLowerCase() ?? 'member') as 'member' | 'viewer';
+        const approval = await ctx.app.approvals.request(ctx.actor, 'member.invite', { name: m[1], role });
+        const code = await ctx.app.pairing.createInvite(ctx.actor.workspaceId, ctx.actor.userId, approval.id, m[1], role);
+        await show(ctx, { text: t('ap.invite_created', { name: m[1], role, code }) });
+        await ctx.kick();
+      },
+    });
+    reg.callback('ap', async (ctx, [action, raw], answer) => {
+      const id = dec(raw);
+      if (!id) return answer(t('common.stale'), true);
+      const names = await memberNames(ctx.app, ctx.actor.workspaceId);
+      if (action === 'o') {
+        const a = await ctx.app.approvals.get(ctx.actor, id);
+        return show(ctx, approvalCard(a, names.get(a.requested_by) ?? '?', ctx.app.clock.now(), ctx.actor.userId));
+      }
+      if (action === 'x') {
+        const { changed } = await ctx.app.approvals.cancel(ctx.actor, id);
+        await answer(changed ? t('ap.cancelled') : t('qa.already_handled'));
+        return show(ctx, await approvalsView(ctx));
+      }
+      if (action !== 'a' && action !== 'r') return answer(t('common.stale'), true);
+      const { approval, changed } = await ctx.app.approvals.decide(ctx.actor, id, action === 'a');
+      await answer(changed ? t(`ap.status.${approval.status}`) : t('ap.already', { status: t(`ap.status.${approval.status}`) }), !changed);
+      await show(ctx, approvalCard(approval, names.get(approval.requested_by) ?? '?', ctx.app.clock.now(), ctx.actor.userId));
+      await ctx.kick();
+    });
+
     reg.command({
       name: 'start', group: 'start', description: 'cmd.start',
       handler: async (ctx) => {

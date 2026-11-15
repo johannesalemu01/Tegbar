@@ -9,6 +9,10 @@ export interface TegbarFlavor {
   actor: Actor | null;
   member: Member | null;
   notifier: Notifier;
+  /** Run the scheduler now (delivers outbox notifications immediately instead of on the next 30 s poll). */
+  kick: () => Promise<void>;
+  /** Download a file the user sent (null if larger than Telegram's bot download limit). */
+  fetchFile: (fileId: string, size: number | null) => Promise<Buffer | null>;
 }
 export type BotContext = Context & TegbarFlavor;
 

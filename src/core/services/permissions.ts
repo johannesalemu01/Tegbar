@@ -29,7 +29,12 @@ export type Action =
   | 'reminder.view'
   | 'meeting.view'
   | 'meeting.manage'
-  | 'meeting.series';
+  | 'meeting.series'
+  | 'member.invite'
+  | 'cost.view'
+  | 'cost.create'
+  | 'cost.edit'
+  | 'cost.manage';
 
 const ALL: readonly Role[] = ['owner', 'member', 'viewer'];
 const EDIT: readonly Role[] = ['owner', 'member'];
@@ -52,6 +57,12 @@ export const MATRIX: Readonly<Record<Action, readonly Role[]>> = {
   'meeting.view': ALL,
   'meeting.manage': EDIT,
   'meeting.series': OWN,
+  'member.invite': OWN,
+  'cost.view': ALL,
+  'cost.create': EDIT,
+  'cost.edit': EDIT,
+  /** budgets, categories, split rules, recurring costs, rates */
+  'cost.manage': OWN,
 };
 
 export interface Target {

@@ -21,7 +21,14 @@ export interface BotHandle {
   syncCommands(): Promise<void>;
 }
 
-export function createBot(app: App, token: string, opts: { botInfo?: UserFromGetMe; onUpdate?: () => void } = {}): BotHandle {
+/** Telegram's Bot API serves files up to 20 MB to bots (getFile). */
+export const MAX_BOT_DOWNLOAD = 20 * 1024 * 1024;
+
+export function createBot(
+  app: App,
+  token: string,
+  opts: { botInfo?: UserFromGetMe; onUpdate?: () => void; downloadFile?: (fileId: string) => Promise<Buffer> } = {},
+): BotHandle {
   const bot = new Bot<BotContext>(token, opts.botInfo ? { botInfo: opts.botInfo } : {});
   installApiGuard(bot.api, app.log, (chatId) => app.members.markBlockedByChat(chatId));
   const alerter = new Alerter(() => bot.api, app.members, app.workspace.id, app.log);
@@ -58,6 +65,19 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
     opts.onUpdate?.();
     ctx.app = app;
     ctx.notifier = notifier;
+    ctx.kick = async () => {
+      await scheduler.tick();
+    };
+    ctx.fetchFile = async (fileId, size) => {
+      if (size !== null && size > MAX_BOT_DOWNLOAD) return null;
+      if (opts.downloadFile) return opts.downloadFile(fileId);
+      const file = await bot.api.getFile(fileId);
+      if (!file.file_path) return null;
+      // The URL contains the token: never log it.
+      const res = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`);
+      if (!res.ok) throw new Error(`file download failed: HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    };
     ctx.actor = null;
     ctx.member = null;
     await next();
@@ -141,6 +161,27 @@ export function createBot(app: App, token: string, opts: { botInfo?: UserFromGet
       for (const h of reg.texts) if (await h.handler(m, text)) return;
       await show(m, { text: t('common.text_unhandled') });
     });
+  });
+
+  const onFile = async (ctx: BotContext, file: import('./registry.js').IncomingFile, caption: string) => {
+    const m = ctx as MemberCtx;
+    await guarded(m, 'file', async () => {
+      const pending = await app.pending.take<unknown>(m.actor.workspaceId, m.actor.userId);
+      const h = pending ? reg.media.get(pending.kind) : undefined;
+      if (h) return h(m, file, pending!.payload);
+      if (pending) await app.pending.set(m.actor.workspaceId, m.actor.userId, pending.kind, pending.payload);
+      for (const f of reg.mediaFallbacks) if (await f(m, file, caption)) return;
+      await ctx.reply(t('common.file_hint'), { parse_mode: 'HTML' });
+    });
+  };
+  bot.on('message:photo', async (ctx) => {
+    const p = ctx.message.photo.at(-1)!; // largest size
+    await onFile(ctx, { kind: 'photo', fileId: p.file_id, uniqueId: p.file_unique_id, size: p.file_size ?? null, mime: 'image/jpeg', ext: '.jpg' }, ctx.message.caption ?? '');
+  });
+  bot.on('message:document', async (ctx) => {
+    const d = ctx.message.document;
+    const ext = /\.[a-z0-9]{1,5}$/i.exec(d.file_name ?? '')?.[0] ?? '.bin';
+    await onFile(ctx, { kind: 'document', fileId: d.file_id, uniqueId: d.file_unique_id, size: d.file_size ?? null, mime: d.mime_type ?? null, ext }, ctx.message.caption ?? '');
   });
 
   bot.on('message:location', async (ctx) => {

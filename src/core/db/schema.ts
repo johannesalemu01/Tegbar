@@ -29,6 +29,8 @@ export interface DB {
   pending_inputs: PendingInputsTable;
   jobs: JobsTable;
   job_fires: JobFiresTable;
+  approvals: ApprovalsTable;
+  invites: InvitesTable;
 }
 
 interface Stamps {
@@ -198,3 +200,38 @@ export interface JobFiresTable extends Stamps {
 }
 
 export type Job = Selectable<JobsTable>;
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'failed';
+
+/** Generic two-key approvals: one person requests, another active member decides. */
+export interface ApprovalsTable extends Stamps {
+  id: Generated<number>;
+  workspace_id: number;
+  project_id: number | null;
+  kind: string;
+  payload: string; // JSON
+  summary: string;
+  requested_by: number;
+  status: ApprovalStatus;
+  decided_by: number | null;
+  decided_at: string | null;
+  /** Error key when an approved action could no longer be applied. */
+  result: string | null;
+  expires_at: string;
+}
+
+/** One-time invite codes for adding a person after pairing closed (created via an approval). */
+export interface InvitesTable extends Stamps {
+  id: Generated<number>;
+  workspace_id: number;
+  code_hash: string;
+  role: Role;
+  display_name: string;
+  created_by: number;
+  approval_id: number | null;
+  expires_at: string;
+  used_by: number | null;
+  used_at: string | null;
+}
+
+export type Approval = Selectable<ApprovalsTable>;
