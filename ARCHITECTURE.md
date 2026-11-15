@@ -142,6 +142,12 @@ A new client (Mini App, dashboard, integration) needs no business logic of its o
   - `InsightService` composes other modules' services; every read is permission-checked for the reader.
   - The rules live in pure functions in `logic.ts`: `priorityCandidates`/`topPriorities`, `meetingStreak` and `rebalanceHint`.
   - The brief replaces the `review` digest through `reg.digestOverrides`, a generic hook other modules can use too.
+- **Google Calendar** (`modules/gcal`, flag `gcal`):
+  - `google.ts` is a fetch-based OAuth and Calendar v3 client.
+  - `GcalService` handles the flow: single-use hashed `oauth_states`, a refresh token sealed with `core/crypto/secretbox.ts` (AES-256-GCM, `SECRET_KEY`), and per-meeting sync.
+  - Syncs are queued from the `meeting.changed` hook as coalesced `gcal:<meeting>` jobs.
+  - The fixed event ID (`eventIdFor`) makes inserts idempotent (409 → patch), and a body hash skips unchanged events. Meet links come back through `meetings.setGeneratedLink()`.
+- **Scheduler:** `Jobs.upsert` places a re-queued job strictly after its last fired moment, so the `(job_id, fire_at)` ledger never swallows deliberate re-runs.
 - **API router:** the most specific route wins (`/costs/summary` beats `/costs/:id`).
 
 ## Adding a module

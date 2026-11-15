@@ -104,6 +104,12 @@ RideHome is the first project; `General` holds company-wide items.
   - `/win First paying rider` logs a win and tells your partner. `/wins` lists the last 30 days.
   - The streak counts consecutive weeks in which every planned meeting was held. Meetings skipped on purpose don't break it.
 
+- **Google Calendar + automatic Meet links** (`gcal`):
+  - Every meeting is created in a connected Google Calendar, and moves, skips and mode changes follow it there.
+  - A virtual meeting without a link gets a **Google Meet link automatically**, and the Join button uses it.
+  - If you add your address with `/google email you@gmail.com`, the meeting also lands in your own calendar with Google's alerts.
+  - Setup is in section 10.
+
 | Home | Board | Calendar | Costs | Dark |
 |---|---|---|---|---|
 | ![](docs/img/miniapp-home.png) | ![](docs/img/miniapp-board.png) | ![](docs/img/miniapp-calendar.png) | ![](docs/img/miniapp-costs.png) | ![](docs/img/miniapp-home-dark.png) |
@@ -332,6 +338,31 @@ What you can do in the dashboard:
 - **Costs:** month total, a 6-month trend, categories, the balance and recent entries.
 
 Every action goes through the same domain services as the bot, so permissions, history, reminders and notifications all behave identically.
+
+## 10. Google Calendar and automatic Meet links (optional)
+
+One Google account (yours, or a shared company account) holds the meetings. Tegbar talks to Google over plain HTTPS: there is no Google SDK.
+The stored access is a refresh token, **encrypted** with `SECRET_KEY`.
+
+1. **Google Cloud Console** → create a project → *APIs & Services* → enable **Google Calendar API**.
+2. **OAuth consent screen:**
+   - User type *External* (or *Internal* if you use Google Workspace). Add the scope `…/auth/calendar.events`.
+   - ⚠️ **Publish the app** ("In production"). In *Testing* mode Google expires the access after **7 days** and Tegbar will ask you to reconnect weekly.
+   - An unverified published app shows "Google hasn't verified this app" during sign-in. For your own account choose *Advanced → continue*. [VERIFY Google's current rules for unverified apps with sensitive scopes]
+3. **Credentials** → *Create OAuth client ID* → *Web application*. Add the authorized redirect URI `https://<PUBLIC_URL>/oauth/google/callback`.
+4. **`.env`:** set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SECRET_KEY=$(openssl rand -base64 32)` and `PUBLIC_URL=https://…`, then restart.
+5. **In Telegram:**
+   - `/google` → 🔗 **Connect Google Calendar** → sign in. The link works once and expires in 10 minutes. You'll get "Google Calendar connected".
+   - `/features` → **Turn on gcal**. All upcoming meetings (8 weeks) are synced.
+   - Each person runs `/google email you@gmail.com` to be invited, so the meeting also appears in their own calendar.
+
+How it behaves:
+
+- **Meet links:** a link someone typed, or the slot's reusable room link, always wins; Tegbar only creates a Meet link when a virtual meeting has none.
+  Google creates Meet links asynchronously, so Tegbar checks back after ~20 seconds and then fills the link in.
+- **No duplicates:** each meeting maps to one Google event with a fixed ID. Unchanged meetings make no API calls, and temporary Google errors are retried (2 → 32 minutes).
+- **If access is lost** (revoked, or the 7-day Testing expiry), syncing stops and the person who connected gets one "Reconnect" message.
+- **Disconnect** (in `/google`) revokes the access at Google. Events already in the calendar stay.
 
 ## 8. Extending
 
