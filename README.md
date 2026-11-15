@@ -72,7 +72,24 @@ RideHome is the first project; `General` holds company-wide items.
 
 **HTTP API** (off by default) for a future Mini App or dashboard; see section 7.
 
-The next phase is notices, `/tell`, areas with the two-key rule, the decision log, notes, search, export, and encrypted backups (5).
+**Phase 5, communication, knowledge and data safety:**
+
+- **Notices** (`/notice`, `/notices`) come in three levels: info, important and **urgent**. Your partner taps ✓ Acknowledged and you're told.
+  Urgent notices break through quiet hours and DND, and repeat every 30 minutes until acknowledged, at most 6 times. Old notices can be archived.
+- **`/tell`** sends your partner a message with a ↩ Reply button.
+- **Areas** (`/areas`) show the owner and backup per project. **Changing an owner needs the other person's approval**; backups and names change directly.
+- **Decision log:**
+  - `/decide What — why` proposes a decision, and it becomes *agreed* when you both agree.
+  - Editing or deleting an agreed decision needs a second key. You can also supersede it with a new one.
+  - Decisions taken in a meeting land in the log as agreed.
+  - Pending decisions and unacknowledged urgent or important notices are added to the next meeting's agenda.
+- **Notes and links** (`/note`, `/notes #tag`) belong to a project and can carry tags.
+- **`/search`** searches tasks, notes, decisions, notices and meeting outcomes, in Amharic and English.
+- **`/export`** gives a CSV per type, or everything as one JSON file.
+- **`/purge`** permanently deletes items that were already deleted, archived or voided, including receipt files, and redacts their history. Purging money or decisions needs a second key.
+- **Encrypted daily backups**, with a tested restore (see section 5).
+
+Next: optional extras (Phase 6), one at a time behind feature flags, after your approval.
 
 ## 1. Create the bot (@BotFather)
 
@@ -102,6 +119,9 @@ openssl rand -base64 24      # paste the output as SETUP_CODE
 | `TIMEZONE` | no | Default `Africa/Addis_Ababa` |
 | `BUTTON_STYLES` | no | `on` uses Telegram's coloured button styles; set `off` if they render badly |
 | `LOG_LEVEL` | no | `info` by default |
+| `BACKUP_PASSPHRASE` | recommended | Turns on encrypted daily backups (16+ chars). Keep a copy off the server. |
+| `BACKUP_KEEP`, `BACKUP_TIME`, `BACKUP_TELEGRAM` | no | 14 backups, 02:30, send to co-founder A (`on`) |
+| `API_ENABLED`, `API_CORS_ORIGIN`, `API_INITDATA_MAX_AGE` | no | HTTP API for a Mini App (section 7) |
 
 ## 3. Run locally
 
@@ -157,15 +177,40 @@ Tegbar registers `https://your.host/telegram`. grammY rejects requests whose sec
 
 ## 5. Backup and restore
 
-Encrypted, scheduled backups with a tested restore arrive in **Phase 5**. Until then, make a consistent copy while the bot runs:
+Set `BACKUP_PASSPHRASE` (16+ characters, e.g. `openssl rand -base64 32`) and **store a copy outside the server**, for example in a password manager. Without it, no backup can be restored.
+
+Once the passphrase is set:
+
+- Every day at `BACKUP_TIME` (02:30 by default), Tegbar writes an encrypted backup to `data/backups/YYYYMMDD-HHMMSS.tgbk`.
+- Each backup contains a consistent database snapshot taken while the bot runs, plus all receipt files.
+- Only the newest `BACKUP_KEEP` backups are kept (14 by default).
+- If `BACKUP_TELEGRAM=on`, each backup under 50 MB is also sent to co-founder A on Telegram. That is your off-site copy.
+
+**Format:** `TGBKUP01 | salt | iv | AES-256-GCM(gzip(tar)) | tag`. The key is derived from the passphrase with scrypt (N=2^15). A wrong passphrase, or a single changed byte, is rejected before anything is written.
 
 ```bash
-sudo docker compose exec tegbar node -e "
-  const D=require('better-sqlite3'); new D('/data/tegbar.db').backup('/data/backup-'+Date.now()+'.db').then(()=>console.log('ok'))"
+# make one now (also: /backup → "Back up now" in Telegram)
+sudo docker compose exec tegbar node dist/cli.js backup
+
+# check a backup without touching anything
+sudo docker compose exec tegbar node dist/cli.js verify /data/backups/20261116-023000.tgbk
+
+# restore (stop the bot first!)
+sudo docker compose stop tegbar
+sudo docker compose run --rm tegbar node dist/cli.js restore /data/backups/20261116-023000.tgbk --bot-is-stopped
+sudo docker compose start tegbar
 ```
 
-Copy `data/backup-*.db` off the server. Treat it like a password, because it is not encrypted yet.
-To restore: stop the bot, replace `data/tegbar.db` with the backup, delete `tegbar.db-wal` and `tegbar.db-shm`, then start the bot.
+Restore works in three steps:
+
+1. It decrypts and extracts the backup into a staging folder.
+2. It runs SQLite's integrity check.
+3. Only then does it move your current database and receipts to `data/pre-restore-<time>/` and put the backup in place.
+
+To restore a copy you received on Telegram, copy it into `data/backups/` on the server first (e.g. with `scp`).
+The full round trip (back up, restore, read the data back) is part of the test suite. Do a restore drill on a spare machine once.
+
+`/purge` permanently deletes items that were already deleted, archived or voided. Older backups still contain them until they rotate out.
 
 ## 6. Everyday use
 
@@ -188,6 +233,9 @@ To restore: stop the bot, replace `data/tegbar.db` with the backup, delete `tegb
 | Who owes whom / settle | `/balance`, `/settle 550` |
 | This month / statement | `/costs`, `/statement 2026-11` |
 | Budget / recurring | `/budget #ridehome 20000 monthly`, `/recurring_costs add 1200 hosting monthly on the 5th auto alert 7d` |
+| Notice / message | `/notice !urgent SMS gateway down`, `/tell call me when free` |
+| Decision / note | `/decide Launch in Bole first — highest demand`, `/note Survey results #research https://…` |
+| Find / export / backup | `/search bole`, `/export`, `/backup` |
 | Switch project | `/project` or `/project #ridehome` |
 | New project | `/projects` → **＋ New project** → `FLEET Fleet Ops — B2B pilot` |
 
@@ -234,6 +282,9 @@ There is a simple rate limit of 120 requests per minute per person. A browser or
 | GET | `/balance?project=`, `/categories`, `/statements/:month` (or `/statements/2026-11.csv`) | |
 | POST | `/settlements`, `/settlements/:id/confirm`, `/settlements/:id/reject` | |
 | GET/POST | `/approvals`, `/approvals/:id/approve`, `/approvals/:id/reject` | |
+| GET | `/search?q=` | |
+| GET/POST | `/notes`, `/decisions`, `/decisions/:id`, POST `/decisions/:id/agree` | |
+| GET/POST | `/notices`, POST `/notices/:id/ack`, POST `/messages` | |
 
 Every route calls the same domain services as the bot. Permissions, events, reminders and hooks behave exactly the same.
 

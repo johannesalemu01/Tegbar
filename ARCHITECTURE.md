@@ -118,6 +118,18 @@ A new client (Mini App, dashboard, integration) needs no business logic of its o
 - Budget warnings are idempotent through `budget_alerts (budget, period, threshold)`. A recurring cost records at most once per occurrence (`UNIQUE(recurring_id, occurrence_date)`).
 - Exports: CSV has a BOM, RFC 4180 quoting and formula-injection protection. PDF uses pdfkit with Noto Sans Ethiopic, switching font per script run.
 
+## Search, export, purge, backups (Phase 5)
+
+- **Registries in core:** `Search`, `Exporter` and `Purge`. Each module registers its own provider: `tasks.search`, `notes.purger()` and so on, wired in `app.ts`. Core never queries a module's tables.
+  `/search` uses `lower(col) LIKE ? ESCAPE '\\'` across providers.
+- **Purge** works only on items that are already soft-deleted, archived or voided. Types flagged `twoKey` (costs, decisions) go through approvals.
+  Purging deletes the rows and files, and **redacts** their events. `EventLog.redact()` is the single sanctioned mutation of the append-only log, and the purge itself is logged.
+- **Comms:** notices are delivered through the outbox, using the delivery class that matches their level (urgent → `urgent`, important → `direct`, info → `nudge`).
+  Urgent notices schedule a capped `notice.renotify` job.
+- **Decisions** subscribe to the `meeting.outcome` hook. Pending decisions and unacknowledged notices are added to meeting agendas through `meetings.addAgendaSource()`.
+- **Backups** (`core/backup/`): a tiny ustar writer/reader, gzip, then AES-256-GCM with an scrypt-derived key. The database snapshot uses SQLite's online backup API.
+  `extractBackup` verifies the auth tag, rejects unsafe paths and runs `PRAGMA integrity_check` before `restoreBackup` swaps anything. `src/cli.ts` holds backup, verify and restore.
+
 ## Adding a module
 
 1. `src/modules/<name>/schema.ts`: table interfaces plus declaration merging into `DB`:
@@ -142,4 +154,5 @@ Kysely already supports PostgreSQL. To move: change `withId` to an identity colu
 Phase 1: core, pairing, projects, permissions, settings, tasks, events, Docker.
 Phase 2: scheduler, task reminders, overdue nudges, one-off reminders, digests, quiet hours / focus / DND, recurring tasks.
 Phase 3: meetings. Phase 4: approvals, invites, shared costs.
-Next: notices, decisions, notes, search, export, encrypted backup (Phase 5).
+Phase 5: notices, /tell, areas (two-key owners), decisions, notes, search, export, purge, encrypted backups.
+Next: Phase 6 extras, each behind a feature flag.
