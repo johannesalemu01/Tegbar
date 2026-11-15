@@ -1,7 +1,7 @@
 import type { DateTime } from 'luxon';
 import type { Db } from '../db/database.js';
 import type { FireStatus, Job } from '../db/schema.js';
-import { toDb, type Clock } from '../time.js';
+import { fromDb, toDb, type Clock } from '../time.js';
 
 export interface JobSpec<P = unknown> {
   kind: string;
@@ -20,11 +20,20 @@ export class Jobs {
 
   async upsert<P>(workspaceId: number, key: string, spec: JobSpec<P>): Promise<void> {
     const now = toDb(this.clock.now());
+    // A re-queued job must land strictly after its last fired moment; otherwise the
+    // (job_id, fire_at) idempotency ledger would treat the new run as already done.
+    let at = spec.at;
+    const last = await this.db
+      .selectFrom('job_fires').innerJoin('jobs', 'jobs.id', 'job_fires.job_id')
+      .select((eb) => eb.fn.max('job_fires.fire_at').as('last'))
+      .where('jobs.workspace_id', '=', workspaceId).where('jobs.key', '=', key)
+      .executeTakeFirst();
+    if (last?.last && toDb(at) <= last.last) at = fromDb(last.last).plus({ milliseconds: 1 });
     const values = {
       kind: spec.kind,
       user_id: spec.userId ?? null,
       payload: JSON.stringify(spec.payload),
-      next_fire_at: toDb(spec.at),
+      next_fire_at: toDb(at),
       status: 'active' as const,
       updated_at: now,
     };

@@ -314,3 +314,21 @@ describe('double taps on Phase 2 buttons', () => {
     expect(t.priority).toBe('high');
   });
 });
+
+describe('scheduler ledger', () => {
+  it('a job re-queued at the same instant it last fired still runs (once)', async () => {
+    const { app, bot, john, sami, rh } = await setup();
+    let runs = 0;
+    bot.scheduler.register({ kind: 'test.requeue', maxLateMs: 60_000, nextAfter: () => null, plan: async () => ({ action: 'send', next: null }), execute: async () => (runs++, 'sent') });
+    await app.jobs.upsert(1, 'requeue:1', { kind: 'test.requeue', payload: {}, at: app.clock.now() });
+    await bot.scheduler.tick();
+    await app.jobs.upsert(1, 'requeue:1', { kind: 'test.requeue', payload: {}, at: app.clock.now() }); // same instant it fired
+    const job = (await app.jobs.get(1, 'requeue:1'))!;
+    expect(job.status).toBe('active'); // not swallowed by the ledger
+    (app.clock as any).advance(1);
+    await bot.scheduler.tick();
+    await bot.scheduler.tick();
+    expect(runs).toBe(2);
+    void john; void sami; void rh;
+  });
+});
