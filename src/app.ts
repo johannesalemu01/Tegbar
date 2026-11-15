@@ -50,6 +50,10 @@ import { miniappModule } from './modules/miniapp/telegram.js';
 import { InsightService, insightMigrations } from './modules/insights/service.js';
 import { insightsModule } from './modules/insights/telegram.js';
 import { insightsApi } from './modules/insights/api.js';
+import { GcalService, gcalMigrations } from './modules/gcal/service.js';
+import { gcalModule } from './modules/gcal/telegram.js';
+import { GoogleClient } from './modules/gcal/google.js';
+import { parseKey } from './core/crypto/secretbox.js';
 import { workspaceModule } from './modules/workspace/telegram.js';
 import { taskMigrations } from './modules/tasks/migrations.js';
 import { TaskService } from './modules/tasks/service.js';
@@ -70,6 +74,7 @@ export const MODULES: TegbarModule[] = [
   { ...dataModule, api: knowledgeApi },
   miniappModule,
   { ...insightsModule, migrations: insightMigrations, api: insightsApi },
+  { ...gcalModule, migrations: gcalMigrations },
 ];
 
 export interface AppOptions {
@@ -83,6 +88,7 @@ export interface AppOptions {
   /** Where receipts and backups are stored. */
   dataDir?: string;
   backup?: BackupOptions;
+  google?: { clientId?: string | undefined; clientSecret?: string | undefined; secretKey?: string | undefined; publicUrl?: string | undefined; client?: GoogleClient };
 }
 
 export interface App {
@@ -108,6 +114,7 @@ export interface App {
   backups: Backups;
   /** Phase 6: Friday brief, workload, wins (reads across modules through their services). */
   insights: InsightService;
+  gcal: GcalService;
   workspace: Workspace;
   events: EventLog;
   permissions: Permissions;
@@ -277,5 +284,14 @@ export async function createApp(o: AppOptions): Promise<App> {
     tasks,
   } as App;
   app.insights = new InsightService(app);
+  const g = o.google;
+  const googleClient = g?.client ?? (g?.clientId && g.clientSecret && g.publicUrl
+    ? new GoogleClient(g.clientId, g.clientSecret, `${g.publicUrl.replace(/\/$/, '')}/oauth/google/callback`)
+    : null);
+  app.gcal = new GcalService(app, googleClient, parseKey(g?.secretKey));
+  // Keep Google Calendar in step with meetings (queued, coalesced per meeting).
+  hooks.on('meeting.changed', async (e) => {
+    if (await app.gcal.active(e.workspaceId)) await app.gcal.queue(e.workspaceId, e.meetingId);
+  });
   return app;
 }

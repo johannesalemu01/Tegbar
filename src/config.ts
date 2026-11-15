@@ -22,6 +22,11 @@ const schema = z
     PERSON_B_NAME: z.string().optional(),
     BUTTON_STYLES: z.enum(['on', 'off']).default('on'),
     API_ENABLED: z.enum(['on', 'off']).default('off'),
+    /** Google Calendar (optional): OAuth client from Google Cloud Console (type "Web application"). */
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    /** 32 random bytes, base64 (openssl rand -base64 32). Encrypts stored tokens. Required for Google Calendar. */
+    SECRET_KEY: z.string().optional(),
     /** Public HTTPS base URL of this server (needed for the Mini App), e.g. https://tegbar.example.com */
     PUBLIC_URL: z.string().url().refine((u) => u.startsWith('https://'), 'PUBLIC_URL must start with https://').optional(),
     /** Enables encrypted daily backups (16+ chars). Keep a copy somewhere safe: without it backups can't be restored. */

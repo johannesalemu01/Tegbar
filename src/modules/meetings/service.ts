@@ -764,6 +764,24 @@ export class MeetingService {
     return hits.slice(0, limit);
   }
 
+  /**
+   * System path for a Meet link created by the Google Calendar integration.
+   * Only fills an empty link (a link typed by a person always wins). Logged.
+   */
+  async setGeneratedLink(workspaceId: number, meetingId: number, url: string): Promise<boolean> {
+    const link = normalizeMeetLink(url);
+    const row = await this.db.selectFrom('meetings').selectAll().where('id', '=', meetingId).where('workspace_id', '=', workspaceId).executeTakeFirst();
+    if (!link || !row || row.meet_url) return false;
+    const now = toDb(this.clock.now());
+    const r = await this.db.updateTable('meetings').set({ meet_url: link, sequence: row.sequence + 1, updated_at: now })
+      .where('id', '=', meetingId).where('meet_url', 'is', null).executeTakeFirst();
+    if (Number(r.numUpdatedRows) !== 1) return false;
+    await this.db.insertInto('meeting_exceptions').values({ workspace_id: workspaceId, meeting_id: meetingId, field: 'link', data: JSON.stringify({ auto: 'google' }), created_by: null, created_at: now, updated_at: now }).execute();
+    await this.events.record(this.db, { workspaceId, projectId: row.project_id, entityType: 'meeting', entityId: meetingId, action: 'meeting.link_auto', data: { source: 'google' } });
+    await this.hooks.emit('meeting.changed', { workspaceId, meetingId });
+    return true;
+  }
+
   /** Called on 'task.linked': record an action item created during a meeting. */
   async recordLinkedTask(actor: Actor, meetingId: number, taskId: number): Promise<void> {
     const t = await this.tasks.get(actor, taskId);

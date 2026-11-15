@@ -5,6 +5,7 @@ import { buildApiRouter } from './core/api/routes.js';
 import { createApiHandler } from './core/api/server.js';
 import { createStaticHandler } from './core/http/static.js';
 import { configureMiniApp } from './modules/miniapp/telegram.js';
+import { createOAuthHandler } from './modules/gcal/telegram.js';
 import { loadConfig } from './config.js';
 import { openDatabase } from './core/db/database.js';
 import { createBot } from './core/telegram/bot.js';
@@ -14,7 +15,7 @@ import { createLogger, registerSecret } from './logger.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  for (const s of [config.BOT_TOKEN, config.SETUP_CODE, config.WEBHOOK_SECRET, config.BACKUP_PASSPHRASE]) registerSecret(s);
+  for (const s of [config.BOT_TOKEN, config.SETUP_CODE, config.WEBHOOK_SECRET, config.BACKUP_PASSPHRASE, config.GOOGLE_CLIENT_SECRET, config.SECRET_KEY]) registerSecret(s);
   const log = createLogger(config.LOG_LEVEL);
   setButtonStyles(config.BUTTON_STYLES === 'on');
   configureMiniApp({ publicUrl: config.PUBLIC_URL, apiEnabled: config.API_ENABLED === 'on' });
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
     workspaceName: config.WORKSPACE_NAME,
     timezone: config.TIMEZONE,
     dataDir: config.DATA_DIR,
+    google: { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET, secretKey: config.SECRET_KEY, publicUrl: config.PUBLIC_URL },
     backup: { passphrase: config.BACKUP_PASSPHRASE, keep: config.BACKUP_KEEP, time: config.BACKUP_TIME, toTelegram: config.BACKUP_TELEGRAM === 'on' },
   });
   if (!app.backups.enabled) log.warn('BACKUP_PASSPHRASE is not set: encrypted backups are OFF');
@@ -64,8 +66,11 @@ async function main(): Promise<void> {
       : null;
 
   const staticHandler = createStaticHandler();
+  const oauthHandler = createOAuthHandler(app, () => bot.api);
+  if (config.GOOGLE_CLIENT_ID && !app.gcal.configured) log.warn('Google Calendar needs GOOGLE_CLIENT_SECRET, PUBLIC_URL and a 32-byte base64 SECRET_KEY');
   // HTTP: /healthz for Docker and hosts; /telegram in webhook mode; /api/v1 and /app/ when enabled.
   const server: Server = createServer(async (req, res) => {
+    if (app.gcal.configured && (await oauthHandler(req, res))) return;
     if (apiHandler && (await apiHandler(req, res))) return;
     if (apiHandler && (await staticHandler(req, res))) return; // Mini App files (only with the API on)
     if (req.method === 'GET' && req.url === '/healthz') {
