@@ -1,4 +1,4 @@
-import type { Api } from 'grammy';
+import { InputFile, type Api } from 'grammy';
 import { randomUUID } from 'node:crypto';
 import type { App } from '../../app.js';
 import type { JobHandler } from '../scheduler/runner.js';
@@ -42,6 +42,19 @@ export class Notifier {
     const ok = await sendTo(this.api(), member.chat_id, view);
     if (!ok) this.app.log.warn({ userId }, 'message not delivered (bot blocked or chat unavailable)');
     return ok;
+  }
+
+  /** Send a file (e.g. a backup) right away. */
+  async sendFile(workspaceId: number, userId: number, data: Buffer, filename: string, caption: string): Promise<boolean> {
+    const member = await this.app.members.get(workspaceId, userId);
+    if (!member) return false;
+    try {
+      await this.api().sendDocument(member.chat_id, new InputFile(data, filename), { caption });
+      return true;
+    } catch (err) {
+      this.app.log.warn({ err, userId }, 'file not delivered');
+      return false;
+    }
   }
 
   /** Scheduler handler for held messages. */
