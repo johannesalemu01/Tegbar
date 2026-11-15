@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Tegbar</title>
+  <link rel="stylesheet" href="app.css?v=5">
+  <script src="https://telegram.org/js/telegram-web-app.js?65"></script>
+  <script type="module" src="app.js?v=5"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark">ተ</span><span>Tegbar</span></div>
+    <div id="scope" class="chips" role="tablist" aria-label="Project"></div>
+  </header>
+  <main id="view" aria-live="polite"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div></main>
+  <nav class="tabs" aria-label="Sections">
+    <button data-tab="home" class="on"><span>⌂</span>Home</button>
+    <button data-tab="board"><span>▤</span>Board</button>
+    <button data-tab="calendar"><span>◷</span>Calendar</button>
+    <button data-tab="costs"><span>¤</span>Costs</button>
+  </nav>
+  <div id="sheet" class="sheet" hidden><div class="sheet-body"></div></div>
+  <div id="toast" class="toast" hidden></div>
+</body>
+</html>
