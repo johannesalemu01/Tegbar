@@ -89,7 +89,13 @@ RideHome is the first project; `General` holds company-wide items.
 - **`/purge`** permanently deletes items that were already deleted, archived or voided, including receipt files, and redacts their history. Purging money or decisions needs a second key.
 - **Encrypted daily backups**, with a tested restore (see section 5).
 
-Next: optional extras (Phase 6), one at a time behind feature flags, after your approval.
+**Phase 6 extras** (each behind an on/off switch in `/features`, all off by default):
+
+- **Mini App dashboard:** a Home overview, a kanban Board, a two-week Calendar and Costs charts, opened from the bot's **Dashboard** menu button. Setup is in section 9.
+
+| Home | Board | Calendar | Costs | Dark |
+|---|---|---|---|---|
+| ![](docs/img/miniapp-home.png) | ![](docs/img/miniapp-board.png) | ![](docs/img/miniapp-calendar.png) | ![](docs/img/miniapp-costs.png) | ![](docs/img/miniapp-home-dark.png) |
 
 ## 1. Create the bot (@BotFather)
 
@@ -287,6 +293,34 @@ There is a simple rate limit of 120 requests per minute per person. A browser or
 | GET/POST | `/notices`, POST `/notices/:id/ack`, POST `/messages` | |
 
 Every route calls the same domain services as the bot. Permissions, events, reminders and hooks behave exactly the same.
+
+## 9. Mini App dashboard (optional)
+
+The dashboard is plain HTML, CSS and JS in `public/app/` (no build step), served by the bot at `/app/`. It talks to the API from section 7.
+It follows Telegram's light or dark theme, shows all times in Addis Ababa, and inserts your text safely (`textContent` only, plus a strict Content-Security-Policy).
+
+1. **Give the server an HTTPS address.** Telegram only opens Mini Apps over HTTPS. Either option works on a free VM:
+   - **Caddy** (automatic Let's Encrypt). Point a domain or subdomain at the VM and run:
+     ```
+     # /etc/caddy/Caddyfile
+     tegbar.example.com {
+       reverse_proxy 127.0.0.1:8080
+     }
+     ```
+   - **Cloudflare Tunnel** (no open ports, no static IP): `cloudflared tunnel --url http://localhost:8080`. A named tunnel gives a stable hostname. [VERIFY the current cloudflared steps]
+2. **Configure** `.env` with `API_ENABLED=on` and `PUBLIC_URL=https://tegbar.example.com`, then restart.
+3. **Switch it on** in Telegram: `/features` → **Turn on miniapp**. Both of you get a **Dashboard** button next to the message field, plus **🖥 Open dashboard** in `/menu` and `/app`.
+
+**Preview the design** without Telegram or a token: run `npm run preview` and open <http://localhost:5173/app/?demo=1> (fake data).
+
+What you can do in the dashboard:
+
+- **Home:** due today, overdue, open; acknowledge notices; Join the next meeting; approve or reject second-key requests.
+- **Board:** quick add with the same syntax as the bot. Tap a card to move it between To do / Doing / Blocked / Done, reassign it, mark it done or delete it.
+- **Calendar:** 14 days of meetings and dated tasks, with Join, Going, +10 and Can't buttons.
+- **Costs:** month total, a 6-month trend, categories, the balance and recent entries.
+
+Every action goes through the same domain services as the bot, so permissions, history, reminders and notifications all behave identically.
 
 ## 8. Extending
 

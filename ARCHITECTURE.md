@@ -130,6 +130,16 @@ A new client (Mini App, dashboard, integration) needs no business logic of its o
 - **Backups** (`core/backup/`): a tiny ustar writer/reader, gzip, then AES-256-GCM with an scrypt-derived key. The database snapshot uses SQLite's online backup API.
   `extractBackup` verifies the auth tag, rejects unsafe paths and runs `PRAGMA integrity_check` before `restoreBackup` swaps anything. `src/cli.ts` holds backup, verify and restore.
 
+## Phase 6 extras
+
+- **Feature flags:** `defineFlag(key, default, description)` registers an optional feature. `/features` lists them, and owners switch them per workspace (buttons carry the target state; every change is an event).
+- **Mini App** (`modules/miniapp`, flag `miniapp`, needs `PUBLIC_URL` + `API_ENABLED`):
+  - `core/http/static.ts` serves `public/app/`, read-only, with a strict CSP and traversal protection.
+  - The module adds a `web_app` button to `/menu` through `reg.menuRows`, and sets the chat menu button through `reg.chatSetup`.
+  - Two read-model endpoints, `/overview` and `/costs/summary`, keep each screen to one request.
+  - The frontend is dependency-free ES modules. `core.js` holds pure, unit-tested helpers. All user text goes through `textContent`.
+- **API router:** the most specific route wins (`/costs/summary` beats `/costs/:id`).
+
 ## Adding a module
 
 1. `src/modules/<name>/schema.ts`: table interfaces plus declaration merging into `DB`:
