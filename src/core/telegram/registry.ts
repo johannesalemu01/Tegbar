@@ -64,6 +64,8 @@ export class Registry {
   readonly menuRows: ((ctx: MemberCtx) => Promise<Btn[][]>)[] = [];
   /** Per-chat setup run with command sync (e.g. the chat menu button). */
   readonly chatSetup: ((api: import('grammy').Api) => Promise<void>)[] = [];
+  /** Replace a digest (e.g. 'review' → the Friday brief) when a feature is on; return null to keep the default. */
+  readonly digestOverrides = new Map<string, (actor: import('../services/context.js').Actor) => Promise<import('../ui/view.js').View | null>>();
   readonly menu: MenuEntry[] = [];
   readonly dashboard: DashboardSection[] = [];
 

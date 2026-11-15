@@ -47,6 +47,9 @@ import { areasModule } from './modules/areas/telegram.js';
 import { dataModule } from './modules/data/telegram.js';
 import { knowledgeApi } from './modules/data/api.js';
 import { miniappModule } from './modules/miniapp/telegram.js';
+import { InsightService, insightMigrations } from './modules/insights/service.js';
+import { insightsModule } from './modules/insights/telegram.js';
+import { insightsApi } from './modules/insights/api.js';
 import { workspaceModule } from './modules/workspace/telegram.js';
 import { taskMigrations } from './modules/tasks/migrations.js';
 import { TaskService } from './modules/tasks/service.js';
@@ -66,6 +69,7 @@ export const MODULES: TegbarModule[] = [
   { ...notesModule, migrations: noteMigrations },
   { ...dataModule, api: knowledgeApi },
   miniappModule,
+  { ...insightsModule, migrations: insightMigrations, api: insightsApi },
 ];
 
 export interface AppOptions {
@@ -102,6 +106,8 @@ export interface App {
   purge: Purge;
   exporter: Exporter;
   backups: Backups;
+  /** Phase 6: Friday brief, workload, wins (reads across modules through their services). */
+  insights: InsightService;
   workspace: Workspace;
   events: EventLog;
   permissions: Permissions;
@@ -237,7 +243,7 @@ export async function createApp(o: AppOptions): Promise<App> {
   await meetings.generate(workspace.id);
 
 
-  return {
+  const app = {
     db,
     database: o.database,
     clock: o.clock,
@@ -269,5 +275,7 @@ export async function createApp(o: AppOptions): Promise<App> {
     projects,
     pairing: new Pairing(db, o.clock, settings, projects, events, { setupCode: o.setupCode, seatNames: o.seatNames ?? {} }, hooks),
     tasks,
-  };
+  } as App;
+  app.insights = new InsightService(app);
+  return app;
 }

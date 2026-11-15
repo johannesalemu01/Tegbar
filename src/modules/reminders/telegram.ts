@@ -9,6 +9,7 @@ import { S_DND_UNTIL, S_FOCUS_UNTIL, S_QUIET_ENABLED, S_QUIET_END, S_QUIET_START
 import type { Actor } from '../../core/services/context.js';
 import type { MemberCtx } from '../../core/telegram/context.js';
 import type { Notifier } from '../../core/telegram/notifier.js';
+import type { Registry } from '../../core/telegram/registry.js';
 import { show } from '../../core/telegram/render.js';
 import { atLocal, fmtDateTime, fromDb, toDb } from '../../core/time.js';
 import { b, esc, i } from '../../core/ui/html.js';
@@ -92,7 +93,7 @@ function taskHandlers(app: App, notifier: Notifier): JobHandler[] {
   return [remind, overdue];
 }
 
-function digestHandler(app: App, notifier: Notifier, kind: DigestKind, name: string): JobHandler<DigestPayload, View> {
+function digestHandler(app: App, notifier: Notifier, kind: DigestKind, name: string, reg: Registry): JobHandler<DigestPayload, View> {
   const build = kind === 'daily' ? dailyDigest : kind === 'plan' ? planDigest : reviewDigest;
   return {
     kind: name,
@@ -108,7 +109,8 @@ function digestHandler(app: App, notifier: Notifier, kind: DigestKind, name: str
         if (held.diff(fireAt).as('hours') > 12 || (next && held >= next)) return { action: 'skip', reason: 'held too long', next };
         return { action: 'skip', reason: 'held', next: held };
       }
-      return { action: 'send', next, data: await build(app, actor) };
+      const override = reg.digestOverrides.get(kind);
+      return { action: 'send', next, data: (override && (await override(actor))) || (await build(app, actor)) };
     },
     async execute(job, p, plan) {
       return (await notifier.sendNow(job.workspace_id, p.userId, plan.data!)) ? 'sent' : 'failed';
@@ -277,9 +279,9 @@ export const remindersModule: TegbarModule = {
   name: 'reminders',
   telegram({ app, reg, notifier }) {
     for (const h of taskHandlers(app, notifier)) reg.job(h);
-    reg.job(digestHandler(app, notifier, 'daily', JOB.digestDaily));
-    reg.job(digestHandler(app, notifier, 'plan', JOB.digestPlan));
-    reg.job(digestHandler(app, notifier, 'review', JOB.digestReview));
+    reg.job(digestHandler(app, notifier, 'daily', JOB.digestDaily, reg));
+    reg.job(digestHandler(app, notifier, 'plan', JOB.digestPlan, reg));
+    reg.job(digestHandler(app, notifier, 'review', JOB.digestReview, reg));
     reg.job(oneOffHandler(app, notifier));
 
     reg.command({
@@ -328,7 +330,10 @@ export const remindersModule: TegbarModule = {
 
     reg.callback('dg', async (ctx, [which], answer) => {
       if (which === 'p') return show(ctx, await planDigest(ctx.app, ctx.actor), 'new');
-      if (which === 'r') return show(ctx, await reviewDigest(ctx.app, ctx.actor), 'new');
+      if (which === 'r') {
+        const override = reg.digestOverrides.get('review');
+        return show(ctx, (override && (await override(ctx.actor))) || (await reviewDigest(ctx.app, ctx.actor)), 'new');
+      }
       return answer(t('common.stale'), true);
     });
 
