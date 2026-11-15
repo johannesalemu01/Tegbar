@@ -3,7 +3,9 @@ import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 export type ButtonStyle = 'primary' | 'success' | 'danger';
 export type Btn =
   | { text: string; data: string; style?: ButtonStyle }
-  | { text: string; url: string; style?: ButtonStyle };
+  | { text: string; url: string; style?: ButtonStyle }
+  /** Opens a Telegram Mini App (HTTPS URL, private chats). */
+  | { text: string; webApp: string; style?: ButtonStyle };
 
 let stylesEnabled = true;
 export function setButtonStyles(on: boolean): void {
@@ -26,6 +28,7 @@ export function keyboard(rows: Btn[][]): InlineKeyboardMarkup {
       .map((row) =>
         row.map((btn): InlineKeyboardButton => {
           const style = stylesEnabled && btn.style ? { style: btn.style } : {};
+          if ('webApp' in btn) return { text: btn.text, web_app: { url: btn.webApp }, ...style };
           return 'url' in btn
             ? { text: btn.text, url: btn.url, ...style }
             : { text: btn.text, callback_data: btn.data, ...style };

@@ -60,6 +60,10 @@ export class Registry {
   readonly media = new Map<string, MediaHandler>();
   readonly mediaFallbacks: MediaFallback[] = [];
   readonly draftLinkers: DraftLinker[] = [];
+  /** Extra rows for /menu (e.g. the Mini App button). */
+  readonly menuRows: ((ctx: MemberCtx) => Promise<Btn[][]>)[] = [];
+  /** Per-chat setup run with command sync (e.g. the chat menu button). */
+  readonly chatSetup: ((api: import('grammy').Api) => Promise<void>)[] = [];
   readonly menu: MenuEntry[] = [];
   readonly dashboard: DashboardSection[] = [];
 

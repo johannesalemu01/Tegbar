@@ -53,20 +53,25 @@ export class ApiRouter {
   match(method: string, path: string): { handler: ApiHandler; params: Record<string, string> } | 'method' | null {
     const segs = path.split('/').filter(Boolean);
     let pathMatched = false;
+    let best: { handler: ApiHandler; params: Record<string, string>; literals: number } | null = null;
     for (const r of this.routes) {
       if (r.parts.length !== segs.length) continue;
       const params: Record<string, string> = {};
+      let literals = 0;
       const ok = r.parts.every((p, i) => {
         if (p.startsWith(':')) {
           params[p.slice(1)] = decodeURIComponent(segs[i]!);
           return true;
         }
+        literals++;
         return p === segs[i];
       });
       if (!ok) continue;
       pathMatched = true;
-      if (r.method === method) return { handler: r.handler, params };
+      // The most specific route wins: /costs/summary beats /costs/:id regardless of registration order.
+      if (r.method === method && (!best || literals > best.literals)) best = { handler: r.handler, params, literals };
     }
+    if (best) return { handler: best.handler, params: best.params };
     return pathMatched ? 'method' : null;
   }
 

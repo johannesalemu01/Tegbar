@@ -222,6 +222,7 @@ export function createBot(
  * Telegram command names: 1-32 chars of a-z, 0-9, _ ; descriptions 1-256 chars.
  */
 export async function syncCommandsFor(api: Api, app: App, reg: Registry): Promise<void> {
+  for (const fn of reg.chatSetup) await fn(api).catch((err) => app.log.warn({ err }, 'chat setup failed'));
   const commands = [...reg.commands.values()].map((c) => ({ command: c.name, description: t(c.description) }));
   await api.deleteMyCommands().catch(() => undefined);
   for (const m of await app.members.list(app.workspace.id)) {

@@ -36,9 +36,11 @@ async function menuView(ctx: MemberCtx, reg: Registry): Promise<View> {
   const current = await ctx.app.projects.current(ctx.actor);
   const buttons = reg.menu.map((e): Btn => ({ text: t(e.label), data: cb('m', e.command), ...(e.order === 0 ? { style: 'primary' as const } : {}) }));
   const first = buttons.slice(0, 1);
+  const extra: Btn[][] = [];
+  for (const fn of reg.menuRows) extra.push(...(await fn(ctx)));
   return {
     text: `${b('Tegbar')} ${i('· ተግባር')}\n${t('menu.current', { code: current.code })}`,
-    keyboard: [first, ...grid(buttons.slice(1), 2)],
+    keyboard: [...extra, first, ...grid(buttons.slice(1), 2)],
   };
 }
 

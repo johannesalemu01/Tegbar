@@ -6,9 +6,15 @@ import { toDb, type Clock } from '../time.js';
  * Resolution: project flag → workspace flag → registered default.
  */
 const defaults = new Map<string, boolean>();
-export function defineFlag(key: string, defaultEnabled = false): string {
+const descriptions = new Map<string, string>();
+/** Register an optional feature. Off by default; owners switch it with /features. */
+export function defineFlag(key: string, defaultEnabled = false, description = key): string {
   defaults.set(key, defaultEnabled);
+  descriptions.set(key, description);
   return key;
+}
+export function knownFlags(): { key: string; description: string }[] {
+  return [...defaults.keys()].map((key) => ({ key, description: descriptions.get(key) ?? key }));
 }
 
 export class FeatureFlags {

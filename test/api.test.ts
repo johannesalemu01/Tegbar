@@ -53,6 +53,20 @@ describe('Mini App initData validation', () => {
   });
 });
 
+describe('API router', () => {
+  it('prefers literal segments over params', async () => {
+    const { ApiRouter } = await import('../src/core/api/router.js');
+    const r = new ApiRouter();
+    r.get('/costs/:id', async () => 'by id');
+    r.get('/costs/summary', async () => 'summary');
+    const m = r.match('GET', '/costs/summary');
+    const n = r.match('GET', '/costs/12');
+    if (!m || m === 'method' || !n || n === 'method') throw new Error('no match');
+    expect(await m.handler({} as never)).toBe('summary');
+    expect(n.params).toEqual({ id: '12' });
+  });
+});
+
 describe('HTTP API', () => {
   it('requires valid launch data from a member', async () => {
     const { call, initFor } = await start();
