@@ -34,7 +34,14 @@ export type Action =
   | 'cost.view'
   | 'cost.create'
   | 'cost.edit'
-  | 'cost.manage';
+  | 'cost.manage'
+  | 'notice.post'
+  | 'note.create'
+  | 'decision.create'
+  | 'area.manage'
+  | 'data.export'
+  | 'data.purge'
+  | 'backup.manage';
 
 const ALL: readonly Role[] = ['owner', 'member', 'viewer'];
 const EDIT: readonly Role[] = ['owner', 'member'];
@@ -63,6 +70,14 @@ export const MATRIX: Readonly<Record<Action, readonly Role[]>> = {
   'cost.edit': EDIT,
   /** budgets, categories, split rules, recurring costs, rates */
   'cost.manage': OWN,
+  'notice.post': EDIT,
+  'note.create': EDIT,
+  'decision.create': EDIT,
+  /** add/rename/archive areas; owner changes also need a second key */
+  'area.manage': OWN,
+  'data.export': EDIT,
+  'data.purge': OWN,
+  'backup.manage': OWN,
 };
 
 export interface Target {

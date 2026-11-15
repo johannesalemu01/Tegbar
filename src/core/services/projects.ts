@@ -257,6 +257,61 @@ export class Projects {
     return this.get(actor, id);
   }
 
+  // ---------- areas ----------
+
+  async area(actor: Actor, id: number): Promise<Area> {
+    const a = await this.db.selectFrom('areas').selectAll().where('id', '=', id).where('workspace_id', '=', actor.workspaceId).executeTakeFirst();
+    if (!a) throw new NotFoundError();
+    await this.permissions.authorize(actor, 'project.view', { projectId: a.project_id });
+    return a;
+  }
+
+  /** Applied by the 'areas.owner' approval (two-key) — never called directly from handlers. */
+  async applyAreaOwner(actor: Actor, areaId: number, ownerUserId: number, requestedBy: number): Promise<void> {
+    const a = await this.area(actor, areaId);
+    if (!(await this.permissions.can({ userId: ownerUserId, workspaceId: actor.workspaceId }, 'project.view', { projectId: a.project_id }))) {
+      throw new DomainError('task.owner_no_access');
+    }
+    await this.db.updateTable('areas').set({ owner_user_id: ownerUserId, updated_at: toDb(this.clock.now()) }).where('id', '=', areaId).execute();
+    await this.events.record(this.db, {
+      workspaceId: actor.workspaceId, projectId: a.project_id, actorUserId: actor.userId, entityType: 'area', entityId: areaId,
+      action: 'area.owner_changed', data: { from: a.owner_user_id, to: ownerUserId, requestedBy },
+    });
+  }
+
+  /** Backup, name and archive changes don't need a second key. */
+  async updateArea(actor: Actor, areaId: number, patch: { backupUserId?: number | null; name?: string; archived?: boolean }): Promise<Area> {
+    const a = await this.area(actor, areaId);
+    await this.permissions.authorize(actor, 'area.manage', { projectId: a.project_id });
+    const set: Record<string, unknown> = { updated_at: toDb(this.clock.now()) };
+    if (patch.backupUserId !== undefined) set.backup_user_id = patch.backupUserId;
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name || name.length > 40) throw new DomainError('area.bad_name');
+      set.name = name;
+    }
+    if (patch.archived !== undefined) set.archived_at = patch.archived ? toDb(this.clock.now()) : null;
+    await this.db.updateTable('areas').set(set).where('id', '=', areaId).execute();
+    await this.events.record(this.db, { workspaceId: actor.workspaceId, projectId: a.project_id, actorUserId: actor.userId, entityType: 'area', entityId: areaId, action: 'area.updated', data: patch });
+    return this.area(actor, areaId);
+  }
+
+  async addArea(actor: Actor, projectId: number, name: string): Promise<Area> {
+    await this.permissions.authorize(actor, 'area.manage', { projectId });
+    const clean = name.trim();
+    if (!clean || clean.length > 40) throw new DomainError('area.bad_name');
+    const slug = slugify(clean);
+    if (await this.db.selectFrom('areas').select('id').where('project_id', '=', projectId).where('slug', '=', slug).executeTakeFirst()) throw new DomainError('area.exists');
+    const now = toDb(this.clock.now());
+    const max = await this.db.selectFrom('areas').select((eb) => eb.fn.max('sort_order').as('m')).where('project_id', '=', projectId).executeTakeFirst();
+    const row = await this.db.insertInto('areas').values({
+      workspace_id: actor.workspaceId, project_id: projectId, name: clean, slug, owner_user_id: null, backup_user_id: null,
+      sort_order: Number(max?.m ?? 0) + 1, archived_at: null, created_at: now, updated_at: now,
+    }).returningAll().executeTakeFirstOrThrow();
+    await this.events.record(this.db, { workspaceId: actor.workspaceId, projectId, actorUserId: actor.userId, entityType: 'area', entityId: row.id, action: 'area.created', data: { name: clean } });
+    return row;
+  }
+
   // ---------- internals ----------
 
   private async insertProject(

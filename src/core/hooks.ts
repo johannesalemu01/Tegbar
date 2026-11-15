@@ -14,6 +14,8 @@ export interface HookEvents {
   'meeting.changed': { workspaceId: number; meetingId: number };
   /** A task was created in the context of another item (e.g. an action item of a live meeting). */
   'task.linked': { workspaceId: number; taskId: number; actorUserId: number; link: { type: string; id: number } };
+  /** A meeting outcome was recorded (decisions become decision-log entries). */
+  'meeting.outcome': { workspaceId: number; meetingId: number; projectId: number; kind: string; text: string; actorUserId: number; attendees: number[] };
 }
 
 type Listener<K extends keyof HookEvents> = (payload: HookEvents[K]) => Promise<void> | void;
