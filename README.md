@@ -93,6 +93,17 @@ RideHome is the first project; `General` holds company-wide items.
 
 - **Mini App dashboard:** a Home overview, a kanban Board, a two-week Calendar and Costs charts, opened from the bot's **Dashboard** menu button. Setup is in section 9.
 
+- **Friday founder brief** (`brief`):
+  - On Fridays, at your "Week in review" time, the brief **replaces** that message, so there's no second message.
+  - It covers what got done, what's stuck, the next 7 days of meetings and deadlines, money (spend, budgets, renewals, balance) and **three suggested priorities**, each with its reason.
+  - The priorities come from simple, transparent rules, not AI. `/brief` shows it any time.
+- **Workload view** (`workload`):
+  - `/workload` shows open, overdue and done-per-week counts per person and project. Facts only: no scores, no ranking.
+  - If one person has far more open work, it lists their tasks that sit in areas the other person owns, with one-tap Reassign.
+- **Wins and meeting streak** (`wins`):
+  - `/win First paying rider` logs a win and tells your partner. `/wins` lists the last 30 days.
+  - The streak counts consecutive weeks in which every planned meeting was held. Meetings skipped on purpose don't break it.
+
 | Home | Board | Calendar | Costs | Dark |
 |---|---|---|---|---|
 | ![](docs/img/miniapp-home.png) | ![](docs/img/miniapp-board.png) | ![](docs/img/miniapp-calendar.png) | ![](docs/img/miniapp-costs.png) | ![](docs/img/miniapp-home-dark.png) |

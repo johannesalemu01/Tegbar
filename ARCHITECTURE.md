@@ -138,6 +138,10 @@ A new client (Mini App, dashboard, integration) needs no business logic of its o
   - The module adds a `web_app` button to `/menu` through `reg.menuRows`, and sets the chat menu button through `reg.chatSetup`.
   - Two read-model endpoints, `/overview` and `/costs/summary`, keep each screen to one request.
   - The frontend is dependency-free ES modules. `core.js` holds pure, unit-tested helpers. All user text goes through `textContent`.
+- **Insights** (`modules/insights`, flags `brief`, `workload`, `wins`):
+  - `InsightService` composes other modules' services; every read is permission-checked for the reader.
+  - The rules live in pure functions in `logic.ts`: `priorityCandidates`/`topPriorities`, `meetingStreak` and `rebalanceHint`.
+  - The brief replaces the `review` digest through `reg.digestOverrides`, a generic hook other modules can use too.
 - **API router:** the most specific route wins (`/costs/summary` beats `/costs/:id`).
 
 ## Adding a module
