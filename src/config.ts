@@ -22,6 +22,12 @@ const schema = z
     PERSON_B_NAME: z.string().optional(),
     BUTTON_STYLES: z.enum(['on', 'off']).default('on'),
     API_ENABLED: z.enum(['on', 'off']).default('off'),
+    /** Enables encrypted daily backups (16+ chars). Keep a copy somewhere safe: without it backups can't be restored. */
+    BACKUP_PASSPHRASE: z.string().min(16, 'BACKUP_PASSPHRASE must be at least 16 characters').optional(),
+    BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
+    BACKUP_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default('02:30'),
+    /** Send each backup file to co-founder A on Telegram (if under 50 MB). */
+    BACKUP_TELEGRAM: z.enum(['on', 'off']).default('on'),
     /** Origin of your Mini App / dashboard, e.g. https://tegbar.example.com (enables CORS for it only). */
     API_CORS_ORIGIN: z.string().url().optional(),
     /** Reject Mini App launch data older than this (seconds). */

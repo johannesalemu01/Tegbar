@@ -12,7 +12,7 @@ import { createLogger, registerSecret } from './logger.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  for (const s of [config.BOT_TOKEN, config.SETUP_CODE, config.WEBHOOK_SECRET]) registerSecret(s);
+  for (const s of [config.BOT_TOKEN, config.SETUP_CODE, config.WEBHOOK_SECRET, config.BACKUP_PASSPHRASE]) registerSecret(s);
   const log = createLogger(config.LOG_LEVEL);
   setButtonStyles(config.BUTTON_STYLES === 'on');
 
@@ -26,7 +26,9 @@ async function main(): Promise<void> {
     workspaceName: config.WORKSPACE_NAME,
     timezone: config.TIMEZONE,
     dataDir: config.DATA_DIR,
+    backup: { passphrase: config.BACKUP_PASSPHRASE, keep: config.BACKUP_KEEP, time: config.BACKUP_TIME, toTelegram: config.BACKUP_TELEGRAM === 'on' },
   });
+  if (!app.backups.enabled) log.warn('BACKUP_PASSPHRASE is not set: encrypted backups are OFF');
 
   let lastUpdateAt = Date.now();
   const { bot, alerter, syncCommands, scheduler } = createBot(app, config.BOT_TOKEN, { onUpdate: () => (lastUpdateAt = Date.now()) });
