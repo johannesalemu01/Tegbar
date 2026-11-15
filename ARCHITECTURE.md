@@ -97,6 +97,27 @@ A new client (Mini App, dashboard, integration) needs no business logic of its o
 - Agenda sources are pluggable: `meetings.addAgendaSource(fn)`. Phase 5 will add pending decisions and unacknowledged notices this way.
 - A live meeting registers a *draft linker*, so plain-text tasks become its action items through the `task.linked` hook. The tasks module knows nothing about meetings.
 
+## Two-key approvals and the outbox (Phase 4)
+
+- `core/services/approvals.ts` is the **generic two-key mechanism**. A module registers a kind once (`{ kind, action, describe, execute }`) and calls `request()`.
+  Another active member with the same permission approves or rejects, exactly once (an atomic `pending → approved` update). The requester can never approve their own request.
+  An identical pending request is reused. If the action can no longer be applied, the status becomes `failed` with the reason.
+  Kinds in use: `costs.split_rule`, `costs.spend` (threshold, off by default) and `member.invite`.
+  Phase 5 adds area-owner changes, deletions and past-decision edits the same way.
+- **Outbox.** Notifications that must go out exactly once are scheduler jobs scheduled for *now* (`approval.notify`, `cost.settlement_notify`, `cost.budget_alert`).
+  Telegram handlers call `ctx.kick()` so they are delivered immediately. Requests from the API are picked up on the next 30-second poll.
+
+## Costs (Phase 4)
+
+- Money is an **integer in the smallest unit** (`amount_minor`, santim). Parsing and formatting use strings and BigInt (`money.ts`).
+- **Splits are frozen** in `cost_splits` when a cost is saved, using basis points and largest-remainder allocation; leftover santim go to the payer first.
+  A later rule change never rewrites history.
+- **Balances are never stored.** `netPositions()` recomputes them from active costs plus confirmed settlements. Overall views include every settlement; per-project views only that project's.
+- Costs are never deleted; `void(reason)` keeps the row. Every change is an event.
+- Multi-currency is ready but off. Conversions only use person-entered rates (per entry, or per month in `exchange_rates`), and every converted total shows the rate used.
+- Budget warnings are idempotent through `budget_alerts (budget, period, threshold)`. A recurring cost records at most once per occurrence (`UNIQUE(recurring_id, occurrence_date)`).
+- Exports: CSV has a BOM, RFC 4180 quoting and formula-injection protection. PDF uses pdfkit with Noto Sans Ethiopic, switching font per script run.
+
 ## Adding a module
 
 1. `src/modules/<name>/schema.ts`: table interfaces plus declaration merging into `DB`:
@@ -120,4 +141,5 @@ Kysely already supports PostgreSQL. To move: change `withId` to an identity colu
 
 Phase 1: core, pairing, projects, permissions, settings, tasks, events, Docker.
 Phase 2: scheduler, task reminders, overdue nudges, one-off reminders, digests, quiet hours / focus / DND, recurring tasks.
-Next: meetings (Phase 3).
+Phase 3: meetings. Phase 4: approvals, invites, shared costs.
+Next: notices, decisions, notes, search, export, encrypted backup (Phase 5).

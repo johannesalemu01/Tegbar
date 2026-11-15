@@ -51,9 +51,28 @@ RideHome is the first project; `General` holds company-wide items.
 - While a meeting is live, any task you type becomes an action item. Decisions, open questions and notes can be logged with one tap.
 - Ending a meeting sends both of you a summary and carries open questions to the next meeting. `/meetings` → 🕘 History shows past meetings.
 
+**Phase 4, shared costs (ETB):**
+
+- Record a cost with `/spend 1500 hosting #ridehome telebirr VPS` (or `/spend` and buttons), or send a receipt photo with a `/spend …` caption.
+  You always confirm on a card before it's saved. You can change project, category, payer, method (cash/bank/Telebirr/card), split (project rule, equal, only mine), founder tag, date and note.
+- Default categories: Hosting & servers, SMS & maps, Tools & subscriptions, Legal & registration, Marketing, Travel, Equipment, Other. They are editable in `/costs` → ▤ Categories.
+- Receipts are photos or files stored on disk (`DATA_DIR/receipts`, file mode 600). Each cost can have several.
+- Every edit is logged. **Void with a reason** replaces deleting: the row stays and simply stops counting.
+- `/costs` shows totals per month, project and category, a 6-month trend line, budget status and recent entries.
+- `/balance` shows who owes whom, overall and per project. It is always computed from the entries.
+  `/settle` or the **I paid …** button records a payment, and the other person confirms it. Tegbar can't see transfers.
+- Split rules per project (equal, custom % or one person pays all) can only change with the **other person's approval** (two-key).
+- Budgets per project (monthly or total) warn both of you once at 80% and once at 100%.
+- Recurring costs such as hosting, domains and SMS credits either **record automatically** or **remind you** with a one-tap "Record it now". You also get a renewal alert N days before.
+- `/statement 2026-11` gives a monthly statement with **CSV** and **PDF** exports. It is sent automatically on the 1st.
+- An approval threshold for large spends is available but off, as you asked (`spend_approval_threshold`).
+- Other currencies are off. When enabled, each entry needs a rate you type in (`rate 125.5`) or a monthly `/rate`. Tegbar never fetches rates.
+- `/invite Name`: a third person can join only after another owner approves.
+- `/approvals` lists everything waiting for a second key.
+
 **HTTP API** (off by default) for a future Mini App or dashboard; see section 7.
 
-The next phases are shared costs (4), and notices, decisions, notes, search and backups (5).
+The next phase is notices, `/tell`, areas with the two-key rule, the decision log, notes, search, export, and encrypted backups (5).
 
 ## 1. Create the bot (@BotFather)
 
@@ -165,6 +184,10 @@ To restore: stop the bot, replace `data/tegbar.db` with the backup, delete `tegb
 | Next meeting / agenda | `/meeting`, `/agenda`, `/meetings` |
 | Add the Meet link | `/meeting link meet.google.com/abc-defg-hij` |
 | Calendar file | `/meeting ics`, or 📅 on a meeting card |
+| Record a cost | `/spend 1500 hosting #ridehome telebirr` (photo + caption works too) |
+| Who owes whom / settle | `/balance`, `/settle 550` |
+| This month / statement | `/costs`, `/statement 2026-11` |
+| Budget / recurring | `/budget #ridehome 20000 monthly`, `/recurring_costs add 1200 hosting monthly on the 5th auto alert 7d` |
 | Switch project | `/project` or `/project #ridehome` |
 | New project | `/projects` → **＋ New project** → `FLEET Fleet Ops — B2B pilot` |
 
@@ -207,6 +230,10 @@ There is a simple rate limit of 120 requests per minute per person. A browser or
 | POST | `/meetings/:id/rsvp`, `/meetings/:id/skip`, `/meetings/:id/unskip`, `/meetings/:id/agenda`, `/meetings/:id/outcomes` | |
 | PATCH | `/meetings/:id` | `startAt, mode, hostUserId, placeId, link, durationMin` |
 | GET | `/places` | |
+| GET/POST | `/costs`, `/costs/:id`, PATCH `/costs/:id`, POST `/costs/:id/void` | amounts are integers in santim (`amountMinor`) |
+| GET | `/balance?project=`, `/categories`, `/statements/:month` (or `/statements/2026-11.csv`) | |
+| POST | `/settlements`, `/settlements/:id/confirm`, `/settlements/:id/reject` | |
+| GET/POST | `/approvals`, `/approvals/:id/approve`, `/approvals/:id/reject` | |
 
 Every route calls the same domain services as the bot. Permissions, events, reminders and hooks behave exactly the same.
 
@@ -226,6 +253,8 @@ Every route calls the same domain services as the bot. Permissions, events, remi
 | `chrono-node` | Natural-language dates for quick add |
 | `pino` | Structured JSON logs with secret redaction |
 | `zod` | Validates environment config at start-up |
+| `pdfkit` | PDF statements |
+| `@fontsource/noto-sans-ethiopic` | Noto Sans Ethiopic font (OFL), embedded so Amharic renders in PDFs |
 
 Dev only: `typescript`, `tsx`, `vitest`, and type packages.
 I left out grammY's conversations and menu plugins: flows are stored in the database instead, which survives restarts and makes stale buttons safe.
