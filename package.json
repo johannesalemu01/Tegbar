@@ -8,9 +8,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "tsx watch --env-file=.env src/main.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main.js",
+    "start": "node --env-file=.env dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,7 +19,8 @@
     "transcript:3": "tsx test/_transcript3.ts",
     "transcript:4": "tsx test/_transcript4.ts",
     "transcript:5": "tsx test/_transcript5.ts",
-    "preview": "tsx scripts/preview.ts"
+    "preview": "tsx scripts/preview.ts",
+    "cli": "node --env-file=.env dist/cli.js"
   },
   "dependencies": {
     "@fontsource/noto-sans-ethiopic": "^5.3.0",
