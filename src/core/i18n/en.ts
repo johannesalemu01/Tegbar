@@ -87,6 +87,8 @@ export const en = {
   'cmd.export': 'Export data (CSV / JSON)',
   'cmd.purge': 'Permanently delete deleted/voided items',
   'cmd.backup': 'Encrypted backups',
+  'cmd.features': 'Optional features (on/off)',
+  'cmd.app': 'Open the dashboard',
 
   // ---------- menu ----------
   'menu.current': (p: { code: string }) => `Current project <code>${e(p.code)}</code>`,
@@ -944,4 +946,16 @@ The weekly slot stays; only this one is skipped.`,
   'backup.too_big': (p: { name: string }) => `🔐 Backup ${e(p.name)} is over 50 MB, so it stays on the server only. Copy it off with scp.`,
   'backup.not_configured': '🔐 Backups are <b>off</b>. Set <code>BACKUP_PASSPHRASE</code> (16+ characters) in .env and restart.',
   'backup.not_configured_short': 'Backups are off: set BACKUP_PASSPHRASE.',
+
+  // ---------- Phase 6: features & Mini App ----------
+  'features.title': 'Optional features',
+  'features.none': 'None registered.',
+  'features.hint': 'Everything optional is off until an owner switches it on here.',
+  'features.turn_on': 'Turn on',
+  'features.turn_off': 'Turn off',
+  'mini.menu_button': 'Dashboard',
+  'mini.btn_open': '🖥 Open dashboard',
+  'mini.open_hint': 'Your board, calendar and costs in one place.',
+  'mini.off': 'The dashboard is off. An owner can turn it on in /features (it needs PUBLIC_URL and API_ENABLED=on on the server).',
+  'mini.needs_setup': '⚠️ The Mini App needs <code>PUBLIC_URL=https://…</code> and <code>API_ENABLED=on</code> in .env (see README → Mini App).',
 } as const;

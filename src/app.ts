@@ -46,6 +46,7 @@ import { commsModule } from './modules/comms/telegram.js';
 import { areasModule } from './modules/areas/telegram.js';
 import { dataModule } from './modules/data/telegram.js';
 import { knowledgeApi } from './modules/data/api.js';
+import { miniappModule } from './modules/miniapp/telegram.js';
 import { workspaceModule } from './modules/workspace/telegram.js';
 import { taskMigrations } from './modules/tasks/migrations.js';
 import { TaskService } from './modules/tasks/service.js';
@@ -64,6 +65,7 @@ export const MODULES: TegbarModule[] = [
   { ...decisionsModule, migrations: decisionMigrations },
   { ...notesModule, migrations: noteMigrations },
   { ...dataModule, api: knowledgeApi },
+  miniappModule,
 ];
 
 export interface AppOptions {

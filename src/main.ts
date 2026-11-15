@@ -3,6 +3,8 @@ import { webhookCallback } from 'grammy';
 import { createApp } from './app.js';
 import { buildApiRouter } from './core/api/routes.js';
 import { createApiHandler } from './core/api/server.js';
+import { createStaticHandler } from './core/http/static.js';
+import { configureMiniApp } from './modules/miniapp/telegram.js';
 import { loadConfig } from './config.js';
 import { openDatabase } from './core/db/database.js';
 import { createBot } from './core/telegram/bot.js';
@@ -15,6 +17,7 @@ async function main(): Promise<void> {
   for (const s of [config.BOT_TOKEN, config.SETUP_CODE, config.WEBHOOK_SECRET, config.BACKUP_PASSPHRASE]) registerSecret(s);
   const log = createLogger(config.LOG_LEVEL);
   setButtonStyles(config.BUTTON_STYLES === 'on');
+  configureMiniApp({ publicUrl: config.PUBLIC_URL, apiEnabled: config.API_ENABLED === 'on' });
 
   const database = openDatabase(config.databasePath);
   const app = await createApp({
@@ -60,9 +63,11 @@ async function main(): Promise<void> {
         })
       : null;
 
-  // HTTP: /healthz for Docker and hosts; /telegram in webhook mode; /api/v1 when enabled.
+  const staticHandler = createStaticHandler();
+  // HTTP: /healthz for Docker and hosts; /telegram in webhook mode; /api/v1 and /app/ when enabled.
   const server: Server = createServer(async (req, res) => {
     if (apiHandler && (await apiHandler(req, res))) return;
+    if (apiHandler && (await staticHandler(req, res))) return; // Mini App files (only with the API on)
     if (req.method === 'GET' && req.url === '/healthz') {
       try {
         app.database.raw.prepare('select 1').get();

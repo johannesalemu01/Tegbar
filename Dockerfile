@@ -20,6 +20,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY public ./public
 COPY package.json ./
 RUN mkdir -p /data && chown node:node /data && chmod 700 /data
 USER node

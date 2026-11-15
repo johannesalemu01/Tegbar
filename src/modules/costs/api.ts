@@ -54,6 +54,30 @@ export function costsApi(r: ApiRouter): void {
     const { cost, changed } = await req.app.costs.void(req.actor, idParam(req), b.reason);
     return { cost: costJson(cost), changed };
   });
+  /** One call for the Mini App costs screen: month totals, categories, 6-month trend, budget, balance. */
+  r.get('/costs/summary', async ({ app, actor, query }) => {
+    const month = query.get('month') ?? localDate(app.clock.now()).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) throw new ApiResponse(400, { error: 'bad_month' });
+    const projectId = query.get('project') ? Number(query.get('project')) : null;
+    const st = await app.costs.statement(actor, month);
+    const costs = projectId ? st.costs.filter((c) => c.project_id === projectId) : st.costs;
+    const sum = (key: (c: CostView) => string) => {
+      const m = new Map<string, number>();
+      for (const c of costs) m.set(`${key(c)}|${c.currency}`, (m.get(`${key(c)}|${c.currency}`) ?? 0) + c.amount_minor);
+      return [...m].map(([k, amountMinor]) => ({ key: k.split('|')[0]!, currency: k.split('|')[1]!, amountMinor })).sort((a, b) => b.amountMinor - a.amountMinor);
+    };
+    const trend = await app.costs.monthlyTotals(actor, projectId, 6);
+    return {
+      month,
+      totals: sum(() => 'total').map(({ currency, amountMinor }) => ({ currency, amountMinor })),
+      byCategory: sum((c) => c.category_name).map(({ key, currency, amountMinor }) => ({ name: key, currency, amountMinor })),
+      byProject: sum((c) => c.project_code).map(({ key, currency, amountMinor }) => ({ code: key, currency, amountMinor })),
+      trend: trend.map((x) => ({ month: x.month, currency: x.currency, amountMinor: x.amount })),
+      balance: await app.costs.balances(actor, projectId),
+      budget: projectId ? await app.costs.budgetStatus(actor.workspaceId, projectId, month) : null,
+      recent: costs.slice(-8).reverse().map(costJson),
+    };
+  });
   r.get('/categories', async ({ app, actor }) => (await app.costs.categories(actor)).map((c) => ({ id: c.id, name: c.name, slug: c.slug })));
   r.get('/balance', async ({ app, actor, query }) => app.costs.balances(actor, query.get('project') ? Number(query.get('project')) : null));
   r.post('/settlements', async ({ app, actor, body }) => {
