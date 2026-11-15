@@ -25,6 +25,7 @@ async function main(): Promise<void> {
     seatNames: { A: config.PERSON_A_NAME, B: config.PERSON_B_NAME },
     workspaceName: config.WORKSPACE_NAME,
     timezone: config.TIMEZONE,
+    dataDir: config.DATA_DIR,
   });
 
   let lastUpdateAt = Date.now();
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
   // the persistent scheduler. The first tick catches up on anything missed while down.
   await app.planner.syncAll(app.workspace.id);
   await app.meetingPlanner.syncAll(app.workspace.id);
+  await app.costs.syncAll(app.workspace.id);
   scheduler.start(30_000);
   log.info('scheduler started (30 s poll)');
 

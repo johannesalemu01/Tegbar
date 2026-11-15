@@ -1,4 +1,7 @@
 import pino from 'pino';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { createApp, type App } from '../src/app.js';
 import { openDatabase } from '../src/core/db/database.js';
@@ -16,6 +19,7 @@ export async function makeApp(now = '2026-11-15T10:00:00+03:00') {
   const clock = fixedClock(now);
   const app = await createApp({
     database, clock, log: pino({ level: 'silent' }), setupCode: SETUP, seatNames: { A: 'John', B: 'Sami' },
+    dataDir: mkdtempSync(join(tmpdir(), 'tegbar-test-')),
   });
   return { app, clock };
 }
@@ -51,7 +55,10 @@ const BOT_INFO: UserFromGetMe = {
 
 export function makeBot(app: App) {
   const calls: ApiCall[] = [];
-  const handle = createBot(app, '0000000:TEST-TOKEN-not-real-xxxxxxxxxxxx', { botInfo: BOT_INFO });
+  const handle = createBot(app, '0000000:TEST-TOKEN-not-real-xxxxxxxxxxxx', {
+    botInfo: BOT_INFO,
+    downloadFile: async (fileId) => Buffer.from(`fake-file:${fileId}`),
+  });
   let messageId = 100;
   handle.bot.api.config.use(async (_prev, method, payload) => {
     calls.push({ method, payload: payload as Record<string, any> });

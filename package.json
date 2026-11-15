@@ -16,14 +16,17 @@
     "test:watch": "vitest",
     "transcript": "tsx test/_transcript.ts",
     "transcript:2": "tsx test/_transcript2.ts",
-    "transcript:3": "tsx test/_transcript3.ts"
+    "transcript:3": "tsx test/_transcript3.ts",
+    "transcript:4": "tsx test/_transcript4.ts"
   },
   "dependencies": {
+    "@fontsource/noto-sans-ethiopic": "^5.3.0",
     "better-sqlite3": "^13.2.0",
     "chrono-node": "^2.10.3",
     "grammy": "^1.46.0",
     "kysely": "^0.29.9",
     "luxon": "^3.7.2",
+    "pdfkit": "^0.20.2",
     "pino": "^10.4.0",
     "zod": "^4.6.7"
   },
@@ -31,6 +34,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/luxon": "^3.7.6",
     "@types/node": "^26.6.6",
+    "@types/pdfkit": "^0.17.7",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

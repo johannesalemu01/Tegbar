@@ -18,6 +18,7 @@ import { setZone, type Clock } from './core/time.js';
 import { Hooks } from './core/hooks.js';
 import { Jobs } from './core/services/jobs.js';
 import { Availability } from './core/services/availability.js';
+import { Approvals } from './core/services/approvals.js';
 import { reminderMigrations } from './modules/reminders/migrations.js';
 import { ReminderPlanner, ReminderService } from './modules/reminders/service.js';
 import { remindersModule } from './modules/reminders/telegram.js';
@@ -27,6 +28,11 @@ import { meetingsApi } from './modules/meetings/api.js';
 import { meetingMigrations } from './modules/meetings/migrations.js';
 import { MeetingPlanner, MeetingService } from './modules/meetings/service.js';
 import { meetingsModule } from './modules/meetings/telegram.js';
+import { costMigrations } from './modules/costs/migrations.js';
+import { CostService } from './modules/costs/service.js';
+import { costsModule } from './modules/costs/telegram.js';
+import { costsApi } from './modules/costs/api.js';
+import { join } from 'node:path';
 import { workspaceModule } from './modules/workspace/telegram.js';
 import { taskMigrations } from './modules/tasks/migrations.js';
 import { TaskService } from './modules/tasks/service.js';
@@ -39,6 +45,7 @@ export const MODULES: TegbarModule[] = [
   { ...tasksModule, migrations: taskMigrations, api: tasksApi },
   { ...remindersModule, migrations: reminderMigrations },
   { ...meetingsModule, migrations: meetingMigrations, api: meetingsApi },
+  { ...costsModule, migrations: costMigrations, api: costsApi },
 ];
 
 export interface AppOptions {
@@ -49,6 +56,8 @@ export interface AppOptions {
   seatNames?: Partial<Record<string, string>>;
   workspaceName?: string;
   timezone?: string;
+  /** Where receipts (and later backups) are stored. */
+  dataDir?: string;
 }
 
 export interface App {
@@ -59,10 +68,12 @@ export interface App {
   hooks: Hooks;
   jobs: Jobs;
   availability: Availability;
+  approvals: Approvals;
   reminders: ReminderService;
   planner: ReminderPlanner;
   meetings: MeetingService;
   meetingPlanner: MeetingPlanner;
+  costs: CostService;
   workspace: Workspace;
   events: EventLog;
   permissions: Permissions;
@@ -91,6 +102,13 @@ export async function createApp(o: AppOptions): Promise<App> {
   const settings = new Settings(db, o.clock, permissions, hooks);
   const jobs = new Jobs(db, o.clock);
   const members = new Members(db, o.clock);
+  const approvals = new Approvals(db, o.clock, permissions, events, jobs, members);
+  // Adding a person after pairing: the invite code only works once another owner approves.
+  approvals.register<{ name: string; role: string }>({
+    kind: 'member.invite', action: 'member.invite',
+    describe: (p) => `Invite ${p.name} as ${p.role}`,
+    execute: async () => undefined,
+  });
   const projects = new Projects(db, o.clock, permissions, events, settings);
   const workspace = await new Workspaces(db, o.clock).ensureDefault(o.workspaceName ?? 'Tegbar', timezone);
   await projects.seed(workspace.id);
@@ -100,6 +118,9 @@ export async function createApp(o: AppOptions): Promise<App> {
   const reminders = new ReminderService(db, o.clock, permissions, events, jobs, members);
   const meetings = new MeetingService(db, o.clock, permissions, events, hooks, members, settings, projects, tasks);
   const meetingPlanner = new MeetingPlanner(db, o.clock, jobs, settings, meetings);
+  const costs = new CostService(db, o.clock, permissions, events, jobs, members, settings, projects, approvals, {
+    receiptsDir: join(o.dataDir ?? './data', 'receipts'),
+  });
 
   // Domain wiring: keep scheduled jobs in step with the data they depend on.
   hooks.on('task.changed', (e) => planner.syncTask(e.workspaceId, e.taskId));
@@ -115,6 +136,9 @@ export async function createApp(o: AppOptions): Promise<App> {
     e.link.type === 'meeting' ? meetings.recordLinkedTask({ userId: e.actorUserId, workspaceId: e.workspaceId }, e.link.id, e.taskId) : undefined,
   );
 
+  await costs.seed(workspace.id);
+  await costs.syncAll(workspace.id); // recurring-cost and monthly statement jobs (idempotent)
+  hooks.on('settings.changed', (e) => (e.scope === 'workspace' && e.key === 'statement_day' ? costs.syncAll(e.workspaceId) : undefined));
   await meetings.seed(workspace.id);
   await meetings.generate(workspace.id);
 
@@ -127,10 +151,12 @@ export async function createApp(o: AppOptions): Promise<App> {
     hooks,
     jobs,
     availability: new Availability(db, settings),
+    approvals,
     reminders,
     planner,
     meetings,
     meetingPlanner,
+    costs,
     workspace,
     events,
     permissions,
