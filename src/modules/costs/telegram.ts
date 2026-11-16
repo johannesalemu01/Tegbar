@@ -255,7 +255,7 @@ export const costsModule: TegbarModule = {
     commands(reg);
     callbacks(app, reg);
     inputs(app, reg);
-    reg.menuEntry({ label: 'menu.costs', command: 'costs', order: 48 });
+    reg.menuEntry({ label: 'menu.costs', command: 'costs', order: 48, group: 'costs' });
 
     // A photo or file with a "/spend …" caption becomes a cost with its receipt.
     reg.mediaFallback(async (ctx, file, caption) => {

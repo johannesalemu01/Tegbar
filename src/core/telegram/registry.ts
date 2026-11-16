@@ -34,10 +34,14 @@ export type LocationHandler = (ctx: MemberCtx, loc: { latitude: number; longitud
 /** Context that a new quick-add draft should be linked to (e.g. the live meeting). */
 export type DraftLinker = (ctx: MemberCtx) => Promise<{ type: string; id: number; label: string } | null>;
 
+/** Front-of-menu groups, in display order. Everything else lives under "More". */
+export const MENU_GROUPS = ['tasks', 'alerts', 'meetings', 'costs', 'more'] as const;
+export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuEntry {
   label: MessageKey;
   command: string;
   order: number;
+  group: MenuGroup;
 }
 export interface DashboardSection {
   order: number;

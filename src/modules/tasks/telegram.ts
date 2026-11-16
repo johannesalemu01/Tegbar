@@ -173,12 +173,12 @@ export const tasksModule: TegbarModule = {
       },
     });
 
-    reg.menuEntry({ label: 'menu.add', command: 'add', order: 0 });
-    reg.menuEntry({ label: 'menu.my', command: 'my', order: 10 });
-    reg.menuEntry({ label: 'menu.today', command: 'today', order: 20 });
-    reg.menuEntry({ label: 'menu.week', command: 'week', order: 25 });
-    reg.menuEntry({ label: 'menu.overdue', command: 'overdue', order: 30 });
-    reg.menuEntry({ label: 'menu.ours', command: 'ours', order: 40 });
+    reg.menuEntry({ label: 'menu.add', command: 'add', order: 0, group: 'tasks' });
+    reg.menuEntry({ label: 'menu.my', command: 'my', order: 10, group: 'tasks' });
+    reg.menuEntry({ label: 'menu.today', command: 'today', order: 20, group: 'tasks' });
+    reg.menuEntry({ label: 'menu.week', command: 'week', order: 25, group: 'tasks' });
+    reg.menuEntry({ label: 'menu.overdue', command: 'overdue', order: 30, group: 'tasks' });
+    reg.menuEntry({ label: 'menu.ours', command: 'ours', order: 40, group: 'tasks' });
 
     // Lists
     reg.callback('tl', async (ctx, [raw], answer) => {

@@ -325,8 +325,8 @@ export const remindersModule: TegbarModule = {
         await show(ctx, v);
       },
     });
-    reg.menuEntry({ label: 'menu.focus', command: 'focus', order: 70 });
-    reg.menuEntry({ label: 'menu.remind', command: 'remind', order: 75 });
+    reg.menuEntry({ label: 'menu.focus', command: 'focus', order: 70, group: 'alerts' });
+    reg.menuEntry({ label: 'menu.remind', command: 'remind', order: 62, group: 'alerts' });
 
     reg.callback('dg', async (ctx, [which], answer) => {
       if (which === 'p') return show(ctx, await planDigest(ctx.app, ctx.actor), 'new');

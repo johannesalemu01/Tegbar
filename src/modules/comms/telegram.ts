@@ -179,7 +179,7 @@ export const commsModule: TegbarModule = {
         await ctx.kick();
       },
     });
-    reg.menuEntry({ label: 'menu.notices', command: 'notices', order: 65 });
+    reg.menuEntry({ label: 'menu.notices', command: 'notices', order: 65, group: 'alerts' });
 
     reg.input('notice.body', async (ctx, text) => startNotice(ctx, text));
     reg.input('tell.reply', async (ctx, text, p: { messageId: number }) => {

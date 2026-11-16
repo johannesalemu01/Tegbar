@@ -112,6 +112,17 @@ export const en = {
   'menu.projects': '◇ Projects',
   'menu.settings': '⚙ Settings',
   'menu.help': '? Help',
+  'menu.group.tasks': '✅ Tasks',
+  'menu.group.alerts': '🔔 Alerts',
+  'menu.group.meetings': '📅 Meetings',
+  'menu.group.costs': '💰 Costs',
+  'menu.group.more': '⋯ More',
+  'menu.group.tasks_title': 'Tasks',
+  'menu.group.alerts_title': 'Alerts — reminders, notices and focus',
+  'menu.group.meetings_title': 'Meetings',
+  'menu.group.costs_title': 'Costs',
+  'menu.group.more_title': 'More',
+  'menu.back': '‹ Menu',
 
   // ---------- help ----------
   'help.intro':

@@ -8,7 +8,7 @@ import { PROJECT_STATUSES } from '../../core/services/projects.js';
 import { S_TIME_FORMAT } from '../../core/services/settings.js';
 import { memberNames, timeFormat } from '../../core/telegram/helpers.js';
 import type { MemberCtx } from '../../core/telegram/context.js';
-import type { Registry } from '../../core/telegram/registry.js';
+import { MENU_GROUPS, type MenuGroup, type Registry } from '../../core/telegram/registry.js';
 import { show } from '../../core/telegram/render.js';
 import { getZone } from '../../core/time.js';
 import { b, code, esc, i, quote } from '../../core/ui/html.js';
@@ -34,13 +34,36 @@ const menuBtn: Btn = { text: t('common.menu'), data: cb('m', 'menu') };
 
 async function menuView(ctx: MemberCtx, reg: Registry): Promise<View> {
   const current = await ctx.app.projects.current(ctx.actor);
-  const buttons = reg.menu.map((e): Btn => ({ text: t(e.label), data: cb('m', e.command), ...(e.order === 0 ? { style: 'primary' as const } : {}) }));
-  const first = buttons.slice(0, 1);
   const extra: Btn[][] = [];
   for (const fn of reg.menuRows) extra.push(...(await fn(ctx)));
+  // Quick add stays one tap away; the rest is grouped so the front stays short.
+  const add = reg.menu.find((e) => e.command === 'add');
+  const front: Btn[] = [];
+  let more: Btn | null = null;
+  for (const g of MENU_GROUPS) {
+    const entries = reg.menu.filter((e) => e.group === g && e !== add);
+    if (!entries.length) continue;
+    const only = entries.length === 1 ? entries[0] : undefined;
+    const btn: Btn = { text: t(`menu.group.${g}`), data: only ? cb('m', only.command) : cb('m', 'g', g) };
+    if (g === 'more') more = btn;
+    else front.push(btn);
+  }
   return {
     text: `${b('Tegbar')} ${i('· ተግባር')}\n${t('menu.current', { code: current.code })}`,
-    keyboard: [...extra, first, ...grid(buttons.slice(1), 2)],
+    keyboard: [
+      ...extra,
+      ...(add ? [[{ text: t(add.label), data: cb('m', add.command), style: 'primary' as const }]] : []),
+      ...grid(front, 2),
+      ...(more ? [[more]] : []),
+    ],
+  };
+}
+
+function menuGroupView(reg: Registry, g: MenuGroup): View {
+  const buttons = reg.menu.filter((e) => e.group === g).map((e): Btn => ({ text: t(e.label), data: cb('m', e.command) }));
+  return {
+    text: b(t(`menu.group.${g}_title`)),
+    keyboard: [...grid(buttons, 2), [{ text: t('menu.back'), data: cb('m', 'menu') }]],
   };
 }
 
@@ -321,14 +344,18 @@ export const workspaceModule: TegbarModule = {
     });
     reg.command({ name: 'settings', group: 'other', description: 'cmd.settings', handler: async (ctx) => show(ctx, await settingsView(ctx, reg)) });
 
-    reg.menuEntry({ label: 'menu.dashboard', command: 'dashboard', order: 50 });
-    reg.menuEntry({ label: 'menu.projects', command: 'projects', order: 60 });
-    reg.menuEntry({ label: 'menu.settings', command: 'settings', order: 80 });
-    reg.menuEntry({ label: 'menu.help', command: 'help', order: 90 });
+    reg.menuEntry({ label: 'menu.dashboard', command: 'dashboard', order: 50, group: 'more' });
+    reg.menuEntry({ label: 'menu.projects', command: 'projects', order: 60, group: 'more' });
+    reg.menuEntry({ label: 'menu.settings', command: 'settings', order: 80, group: 'more' });
+    reg.menuEntry({ label: 'menu.help', command: 'help', order: 90, group: 'more' });
 
     // Menu buttons run the command with no arguments.
-    reg.callback('m', async (ctx, [command], answer) => {
+    reg.callback('m', async (ctx, [command, arg], answer) => {
       if (command === 'menu') return show(ctx, await menuView(ctx, reg));
+      if (command === 'g') {
+        const g = MENU_GROUPS.find((x) => x === arg);
+        return g ? show(ctx, menuGroupView(reg, g)) : answer(t('common.stale'), true);
+      }
       const def = command ? reg.commands.get(command) : undefined;
       if (!def) return answer(t('common.stale'), true);
       await ctx.app.pending.clear(ctx.actor.workspaceId, ctx.actor.userId);

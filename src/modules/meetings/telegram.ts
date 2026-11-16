@@ -211,7 +211,7 @@ export const meetingsModule: TegbarModule = {
       return live ? { type: 'meeting', id: live.id, label: live.title } : null;
     });
 
-    reg.menuEntry({ label: 'menu.meetings', command: 'meetings', order: 45 });
+    reg.menuEntry({ label: 'menu.meetings', command: 'meetings', order: 45, group: 'meetings' });
     reg.dashboardSection({
       order: 20,
       render: async (ctx) => {
