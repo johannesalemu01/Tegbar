@@ -150,3 +150,22 @@ describe('bot: callbacks', () => {
     expect(lastText(bot.calls)).toContain('/help');
   });
 });
+
+describe('bot: menu', () => {
+  it('front shows add + four groups + More; groups open sub-menus', async () => {
+    const { app, bot } = await setup();
+    await pairBoth(app);
+    await bot.send(JOHN, '/menu');
+    const front = allCallbackData(bot.calls);
+    expect(front).toEqual(['m:add', 'm:g:tasks', 'm:g:alerts', 'm:meetings', 'm:costs', 'm:g:more']);
+    bot.calls.length = 0;
+    await bot.tap(JOHN, 'm:g:tasks');
+    expect(allCallbackData(bot.calls)).toEqual(['m:add', 'm:my', 'm:today', 'm:week', 'm:overdue', 'm:ours', 'm:menu']);
+    bot.calls.length = 0;
+    await bot.tap(JOHN, 'm:g:alerts');
+    expect(allCallbackData(bot.calls)).toEqual(['m:remind', 'm:notices', 'm:focus', 'm:menu']);
+    bot.calls.length = 0;
+    await bot.tap(JOHN, 'm:g:nope');
+    expect(answers(bot.calls)).toBe(1);
+  });
+});
